@@ -1,0 +1,7 @@
+.venv/
+.cache/
+__pycache__/
+stories/*/out/
+stories/*/final/
+stories/*/state.json
+.DS_Store
