@@ -1,0 +1,46 @@
+title: TITLE
+notes: |
+  One-paragraph pitch + target look. Drop reference images into refs/.
+
+defaults:
+  model: qwen-image-2.1-turbo
+  quantize: 4
+  width: 864
+  height: 1152
+
+refs: {}
+#  my-ref.png:
+#    label: style reference - what this image shows
+
+blocks:
+  style: >-
+    Soft pastel anime webtoon panel. Thin clean lineart, soft cel-shading.
+    No text, no speech bubbles, no letters.
+  # hero: >-
+  #   Name: hair, eyes, outfit - exact colors, same words every time.
+  setting: >-
+    Describe the main location once.
+
+avoid: >-
+  any text
+
+panels:
+  - id: sheet
+    title: Character sheet
+    strip: false
+    width: 1248
+    height: 832
+    ref_label: character reference sheet
+    refs: []
+    use: [style]
+    action: >-
+      Character turnaround sheet on a plain white background, full body, front view.
+
+  - id: p01
+    title: Opening
+    refs: [sheet]
+    use: [style, setting]
+    action: >-
+      What happens in this panel.
+    bubbles:
+      - {text: "Hello!", at: [0.7, 0.1], w: 0.4, tail: [0.6, 0.3]}
