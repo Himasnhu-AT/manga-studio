@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from studio import story as st
+from studio import compose, story as st
 from studio.engine import make_engine
 
 DASHBOARD = Path(__file__).resolve().parent.parent / "dashboard" / "index.html"
@@ -313,6 +313,14 @@ def note_done(slug: str, req: NoteDone):
     st.update_state(s, f)
     bump()
     return {"ok": True}
+
+
+@app.post("/api/stories/{slug}/compose")
+def do_compose(slug: str):
+    s = _story(slug)
+    r = compose.compose_story(s)
+    bump()
+    return r
 
 
 @app.get("/files/{slug}/{path:path}")

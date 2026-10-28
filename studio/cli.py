@@ -12,7 +12,7 @@ import time
 
 import httpx
 
-from studio import story as st
+from studio import compose, story as st
 
 URL = os.environ.get("STUDIO_URL", "http://127.0.0.1:7860")
 
@@ -176,6 +176,11 @@ def cmd_resolve(a):
     print(f"note #{a.index} marked done")
 
 
+def cmd_compose(a):
+    s = st.load(a.story)
+    r = compose.compose_story(s) if not a.panel else {"composed": [str(compose.compose_panel(s, a.panel))]}
+    print(json.dumps(r, indent=2))
+
 
 
 def cmd_new(a):
@@ -246,6 +251,11 @@ def main():
     p.add_argument("index", type=int)
     p.add_argument("--reply", help="short reply shown under the note in the dashboard")
     p.set_defaults(fn=cmd_resolve)
+
+    p = sub.add_parser("compose", help="draw bubbles on picked panels and build final/strip.png")
+    p.add_argument("story")
+    p.add_argument("--panel")
+    p.set_defaults(fn=cmd_compose)
 
     p = sub.add_parser("new", help="scaffold a story")
     p.add_argument("slug")
