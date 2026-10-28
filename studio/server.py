@@ -227,6 +227,94 @@ def cancel(jid: int):
     return {"ok": True}
 
 
+class PickReq(BaseModel):
+    panel: str
+    file: str | None  # None clears the pick (falls back to newest)
+
+
+@app.post("/api/stories/{slug}/pick")
+def pick(slug: str, req: PickReq):
+    s = _story(slug)
+    s.panel(req.panel)
+    if req.file is not None:
+        names = [v["file"] for v in st.versions(s, req.panel)]
+        if req.file not in names:
+            raise HTTPException(400, f"{req.file!r} is not a version of {req.panel} (have: {', '.join(names) or 'none'})")
+
+    def f(state):
+        if req.file:
+            state["picks"][req.panel] = req.file
+        else:
+            state["picks"].pop(req.panel, None)
+
+    st.update_state(s, f)
+    bump()
+    return {"ok": True}
+
+
+class StarReq(BaseModel):
+    panel: str
+    file: str
+    value: bool
+
+
+@app.post("/api/stories/{slug}/star")
+def star(slug: str, req: StarReq):
+    s = _story(slug)
+
+    def f(state):
+        key = f"{req.panel}/{req.file}"
+        if req.value:
+            state["stars"][key] = True
+        else:
+            state["stars"].pop(key, None)
+
+    st.update_state(s, f)
+    bump()
+    return {"ok": True}
+
+
+class NoteReq(BaseModel):
+    panel: str | None = None
+    file: str | None = None
+    text: str
+
+
+@app.post("/api/stories/{slug}/notes")
+def add_note(slug: str, req: NoteReq):
+    s = _story(slug)
+    st.update_state(
+        s,
+        lambda state: state["notes"].append(
+            {"panel": req.panel, "file": req.file, "text": req.text, "at": time.strftime("%Y-%m-%d %H:%M:%S"), "done": False}
+        ),
+    )
+    bump()
+    return {"ok": True}
+
+
+class NoteDone(BaseModel):
+    index: int
+    done: bool = True
+    reply: str | None = None
+
+
+@app.post("/api/stories/{slug}/notes/done")
+def note_done(slug: str, req: NoteDone):
+    s = _story(slug)
+
+    def f(state):
+        if not 0 <= req.index < len(state["notes"]):
+            raise HTTPException(404, "no such note")
+        state["notes"][req.index]["done"] = req.done
+        if req.reply:
+            state["notes"][req.index]["reply"] = req.reply
+
+    st.update_state(s, f)
+    bump()
+    return {"ok": True}
+
+
 @app.get("/files/{slug}/{path:path}")
 def files(slug: str, path: str):
     base = (st.STORIES / slug).resolve()

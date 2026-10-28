@@ -145,7 +145,35 @@ def cmd_status(a):
     print(json.dumps(_api("GET", "/api/status"), indent=2))
 
 
+def cmd_pick(a):
+    _api("POST", f"/api/stories/{a.story}/pick", json={"panel": a.panel, "file": a.file})
+    print(f"{a.story}/{a.panel}: using {a.file}")
 
+
+def cmd_feedback(a):
+    s = st.load(a.story)
+    state = st.read_state(s)
+    notes = [(i, n) for i, n in enumerate(state["notes"]) if a.all or not n.get("done")]
+    if not notes:
+        print("no open notes")
+    for i, n in notes:
+        where = n.get("panel") or "story"
+        if n.get("file"):
+            where += f"/{n['file']}"
+            where += f"  ({s.dir / 'out' / n['panel'] / n['file']})"
+        done = " [done]" if n.get("done") else ""
+        print(f"#{i}{done} {n['at']}  {where}\n    {n['text']}")
+        if n.get("reply"):
+            print(f"    reply: {n['reply']}")
+    if state["picks"]:
+        print("\npicks: " + ", ".join(f"{k}={v}" for k, v in state["picks"].items()))
+    if state["stars"]:
+        print("stars: " + ", ".join(state["stars"]))
+
+
+def cmd_resolve(a):
+    _api("POST", f"/api/stories/{a.story}/notes/done", json={"index": a.index, "reply": a.reply})
+    print(f"note #{a.index} marked done")
 
 
 
@@ -201,6 +229,23 @@ def main():
     p = sub.add_parser("jobs", help="list jobs")
     p.add_argument("--active", action="store_true")
     p.set_defaults(fn=cmd_jobs)
+
+    p = sub.add_parser("pick", help="choose the version a panel uses (as ref and in the strip)")
+    p.add_argument("story")
+    p.add_argument("panel")
+    p.add_argument("file")
+    p.set_defaults(fn=cmd_pick)
+
+    p = sub.add_parser("feedback", help="notes, picks and stars left in the dashboard")
+    p.add_argument("story")
+    p.add_argument("--all", action="store_true", help="include resolved notes")
+    p.set_defaults(fn=cmd_feedback)
+
+    p = sub.add_parser("resolve", help="mark a dashboard note as handled")
+    p.add_argument("story")
+    p.add_argument("index", type=int)
+    p.add_argument("--reply", help="short reply shown under the note in the dashboard")
+    p.set_defaults(fn=cmd_resolve)
 
     p = sub.add_parser("new", help="scaffold a story")
     p.add_argument("slug")
