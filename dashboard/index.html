@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manga Studio</title>
+<style>
+  :root {
+    --bg: #15151a; --panel: #1d1d24; --panel-2: #25252e; --line: #33333f;
+    --text: #e9e7f0; --muted: #9a97a8; --accent: #a9a4ff; --accent-ink: #15151a;
+    --star: #ffd479; --ok: #7fd6a6; --err: #ff8a8a;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
+  button, select, textarea, input { font: inherit; color: inherit; }
+  button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .45; cursor: default; }
+  select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+
+  header { position: sticky; top: 0; z-index: 5; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+           padding: 10px 16px; background: rgba(21,21,26,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 6px 0 0; letter-spacing: .02em; }
+  .pill { padding: 3px 9px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  .pill.ok { color: var(--ok); } .pill.busy { color: var(--accent); } .pill.err { color: var(--err); }
+  .spacer { flex: 1; }
+  .tabs button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 16px; }
+  .story-notes { color: var(--muted); white-space: pre-wrap; margin: 0 0 14px; max-width: 900px; }
+  .refs-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .refs-row figure { margin: 0; width: 92px; }
+  .refs-row img { width: 92px; height: 92px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
+  .refs-row figcaption { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .card { display: grid; grid-template-columns: minmax(220px, 340px) 1fr; gap: 16px; background: var(--panel); border: 1px solid var(--line);
+          border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
+  .card.refpanel { border-style: dashed; }
+  .hero { position: relative; }
+  .hero img { width: 100%; border-radius: 8px; display: block; background: var(--panel-2); cursor: zoom-in; }
+  .hero .empty { aspect-ratio: 3/4; border-radius: 8px; border: 1px dashed var(--line); display: grid; place-items: center; color: var(--muted); }
+  .hero .tag { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.6); padding: 2px 7px; border-radius: 6px; font-size: 11px; }
+  .hero .toggle { position: absolute; top: 8px; right: 8px; font-size: 11px; padding: 2px 7px; }
+  .meta h2 { margin: 0; font-size: 16px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .meta h2 .id { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .action { margin: 6px 0 10px; color: #cfccdb; max-width: 760px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  .label { color: var(--muted); font-size: 12px; min-width: 64px; }
+  .ref-chip { display: inline-flex; gap: 6px; align-items: center; background: var(--panel-2); border: 1px solid var(--line);
+              border-radius: 8px; padding: 3px 8px 3px 3px; font-size: 12px; }
+  .ref-chip img { width: 28px; height: 28px; object-fit: cover; border-radius: 5px; }
+  .warn { color: var(--err); font-size: 13px; }
+  .bubbles { color: var(--muted); font-size: 13px; }
+  .bubbles span { display: inline-block; background: var(--panel-2); border-radius: 6px; padding: 1px 7px; margin: 2px 4px 2px 0; color: var(--text); }
+
+  .versions { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin-top: 6px; }
+  .v { position: relative; border-radius: 7px; overflow: hidden; border: 2px solid transparent; cursor: pointer; background: var(--panel-2); }
+  .v img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }
+  .v.picked { border-color: var(--accent); }
+  .v .n { position: absolute; bottom: 0; left: 0; right: 0; font-size: 10px; background: rgba(0,0,0,.55); padding: 1px 4px; display: flex; justify-content: space-between; }
+  .v .st { position: absolute; top: 3px; right: 5px; color: var(--star); text-shadow: 0 1px 2px #000; }
+  .v.job { display: grid; place-items: center; aspect-ratio: 3/4; color: var(--muted); font-size: 11px; text-align: center; padding: 4px; }
+  .v.job.running { color: var(--accent); }
+  .v.job.error { color: var(--err); }
+  .bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; width: 80%; margin-top: 4px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  pre.prompt { white-space: pre-wrap; background: #101015; border: 1px solid var(--line); border-radius: 8px; padding: 10px; max-height: 320px; overflow: auto; }
+  .note-box { display: flex; gap: 6px; margin-top: 8px; }
+  .note-box textarea { flex: 1; min-height: 34px; height: 34px; resize: vertical; background: #101015; border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; }
+  .notes { margin-top: 6px; }
+  .note { font-size: 13px; border-left: 2px solid var(--accent); padding: 2px 8px; margin: 4px 0; }
+  .note.done { border-color: var(--line); color: var(--muted); }
+  .note .reply { color: var(--ok); }
+
+  .strip { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  .strip img { width: 100%; border-radius: 4px; display: block; }
+  .strip .missing { aspect-ratio: 3/4; border: 1px dashed var(--line); border-radius: 4px; display: grid; place-items: center; color: var(--muted); }
+
+  #lb { position: fixed; inset: 0; background: rgba(8,8,12,.94); z-index: 20; display: none; grid-template-rows: 1fr auto; }
+  #lb.on { display: grid; }
+  #lb .stage { display: flex; gap: 14px; justify-content: center; align-items: center; padding: 16px; min-height: 0; }
+  #lb .stage figure { margin: 0; height: 100%; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+  #lb .stage img { max-height: calc(100vh - 140px); max-width: 100%; object-fit: contain; border-radius: 6px; }
+  #lb figcaption { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  #lb .bar2 { display: flex; gap: 8px; align-items: center; justify-content: center; padding: 10px 16px 16px; flex-wrap: wrap; }
+  #lb .keys { color: var(--muted); font-size: 12px; }
+
+  @media (max-width: 720px) {
+    .card { grid-template-columns: 1fr; }
+    main { padding: 12px 16px; }
+    #lb .stage { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Manga Studio</h1>
+  <select id="storySel"></select>
+  <div class="tabs"><button data-view="panels" class="on">Panels</button> <button data-view="strip">Strip</button></div>
+  <span class="spacer"></span>
+  <span id="engine" class="pill">engine</span>
+  <span id="queue" class="pill">queue 0</span>
+  <button id="composeBtn">Compose strip</button>
+</header>
+<main id="main"></main>
+
+<div id="lb">
+  <div class="stage" id="lbStage"></div>
+  <div class="bar2">
+    <button id="lbPrev">←</button>
+    <button id="lbPick">Use this (p)</button>
+    <button id="lbStar">☆ Star (s)</button>
+    <button id="lbCompare">Compare with used (c)</button>
+    <button id="lbNext">→</button>
+    <button id="lbClose">Close (esc)</button>
+    <span class="keys" id="lbInfo"></span>
+  </div>
+</div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const S = { slug: null, data: null, jobs: [], view: "panels", showFinal: {}, lb: null, compare: false };
+try { S.slug = localStorage.getItem("ms.story"); S.view = localStorage.getItem("ms.view") || "panels"; } catch {}
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { "content-type": "application/json" }, ...opts,
+                               body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { alertBar(j.detail || r.statusText); throw new Error(j.detail); }
+  return j;
+}
+function alertBar(msg) {
+  const el = document.createElement("div");
+  el.className = "pill err"; el.style.cssText = "position:fixed;bottom:16px;left:16px;z-index:30;max-width:80vw";
+  el.textContent = msg; document.body.appendChild(el); setTimeout(() => el.remove(), 6000);
+}
+// Version files never change (new names each run), so no cache-buster; composed finals pass their mtime.
+const file = (slug, path, v) => `/files/${encodeURIComponent(slug)}/${path}${v ? `?v=${v}` : ""}`;
+
+async function loadStories() {
+  const list = await api("/api/stories");
+  const sel = $("#storySel");
+  sel.innerHTML = list.map(s => `<option value="${esc(s.slug)}">${esc(s.title)}</option>`).join("");
+  if (!list.find(s => s.slug === S.slug)) S.slug = list[0]?.slug;
+  sel.value = S.slug || "";
+}
+
+async function refresh() {
+  if (!S.slug) { $("#main").innerHTML = `<p class="story-notes">No stories yet. Ask Claude to create one (studio new &lt;slug&gt;).</p>`; return; }
+  const [data, jobs, status] = await Promise.all([
+    api(`/api/stories/${encodeURIComponent(S.slug)}`), api(`/api/jobs?story=${encodeURIComponent(S.slug)}`), api("/api/status")]);
+  S.data = data; S.jobs = jobs; S.rev = status.rev;
+  const eng = $("#engine");
+  eng.className = "pill " + (status.loading ? "busy" : status.loaded ? "ok" : "");
+  eng.textContent = status.engine === "mock" ? "mock engine" :
+    status.loading ? "loading model…" : status.loaded ? `${status.model} q${status.quantize}` : "model not loaded (loads on first job)";
+  const active = jobs.filter(j => j.status === "queued" || j.status === "running");
+  $("#queue").textContent = `queue ${active.length}`;
+  $("#queue").className = "pill " + (active.length ? "busy" : "");
+  render();
+}
+
+function render() {
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.view === S.view));
+  const scroll = window.scrollY;
+  S.openDetails = new Set([...document.querySelectorAll("details[data-key][open]")].map(d => d.dataset.key));
+  $("#main").innerHTML = S.view === "strip" ? renderStrip() : renderPanels();
+  window.scrollTo(0, scroll);
+}
+
+function renderPanels() {
+  const d = S.data;
+  const refs = d.refs.length ? `<div class="refs-row">${d.refs.map(r =>
+    `<figure><img src="${file(d.slug, "refs/" + encodeURIComponent(r))}" data-open-ref="${esc(r)}"><figcaption title="${esc(r)}">${esc(r)}</figcaption></figure>`).join("")}</div>` : "";
+  const storyNotes = d.state.notes.map((n, i) => ({...n, i})).filter(n => !n.panel);
+  return `${d.notes_md ? `<p class="story-notes">${esc(d.notes_md)}</p>` : ""}
+    ${refs}
+    ${d.panels.map(renderCard).join("")}
+    <div class="card" style="display:block">
+      <div class="label">Notes for the whole story</div>
+      ${renderNotes(storyNotes)}
+      <div class="note-box"><textarea placeholder="Note for Claude about the whole story…" data-note-panel=""></textarea><button data-send-note="">Send</button></div>
+    </div>`;
+}
+
+function renderCard(p) {
+  const d = S.data;
+  const showFinal = S.showFinal[p.id] && p.final;
+  const heroSrc = showFinal ? file(d.slug, `final/${p.id}.png`, p.final) : p.pick ? file(d.slug, `out/${p.id}/${p.pick}`) : null;
+  const jobs = S.jobs.filter(j => j.panel === p.id && (j.status === "queued" || j.status === "running" || (j.status === "error" && Date.now()/1000 - j.finished < 600)));
+  const refChips = (p.resolved_refs || []).map((r, i) => {
+    const src = r.version ? file(d.slug, `out/${r.name}/${r.version}`) : file(d.slug, `refs/${encodeURIComponent(r.name)}`);
+    return `<span class="ref-chip" title="${esc(r.label)}"><img src="${src}">image ${i + 1}: ${esc(r.name)}</span>`;
+  }).join("") || `<span class="label">none (text only)</span>`;
+  const notes = d.state.notes.map((n, i) => ({...n, i})).filter(n => n.panel === p.id);
+  return `<section class="card ${p.strip === false ? "refpanel" : ""}" id="panel-${esc(p.id)}">
+    <div class="hero">
+      ${heroSrc ? `<img src="${heroSrc}" data-open="${esc(p.id)}" data-file="${esc(p.pick)}">` : `<div class="empty">no image yet</div>`}
+      ${p.pick ? `<span class="tag">${showFinal ? "with bubbles" : esc(p.pick) + (p.explicit_pick ? "" : " · newest")}</span>` : ""}
+      ${p.final ? `<button class="toggle" data-toggle-final="${esc(p.id)}">${showFinal ? "raw" : "bubbles"}</button>` : ""}
+    </div>
+    <div class="meta">
+      <h2>${esc(p.title || p.id)} <span class="id">${esc(p.id)}${p.strip === false ? " · reference, not in strip" : ""}</span></h2>
+      <div class="action">${esc(p.action || "")}</div>
+      ${p.plan_error ? `<div class="warn">⚠ ${esc(p.plan_error)}</div>` : ""}
+      <div class="row"><span class="label">Refs</span>${refChips}</div>
+      ${(p.bubbles || []).length ? `<div class="row bubbles"><span class="label">Bubbles</span>${p.bubbles.map(b => `<span>${esc(b.text)}</span>`).join("")}</div>` : ""}
+      <div class="row">
+        <button class="primary" data-gen="${esc(p.id)}" data-n="1" ${p.plan_error ? "disabled" : ""}>Generate</button>
+        <button data-gen="${esc(p.id)}" data-n="4" ${p.plan_error ? "disabled" : ""}>×4 seeds</button>
+        <span class="label">${p.versions.length} version${p.versions.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="versions">
+        ${jobs.map(j => `<div class="v job ${j.status}">${j.status === "running" ? `step ${j.step || 0}/${j.steps || "?"}<div class="bar"><i style="width:${100 * (j.step || 0) / (j.steps || 8)}%"></i></div>` :
+            j.status === "error" ? `failed<br>${esc((j.error || "").slice(0, 80))}` : `queued<br>seed ${j.seed}<br><button data-cancel="${j.id}">cancel</button>`}</div>`).join("")}
+        ${[...p.versions].reverse().map(v => {
+          const starred = d.state.stars[`${p.id}/${v.file}`];
+          return `<div class="v ${v.file === p.pick ? "picked" : ""}" data-open="${esc(p.id)}" data-file="${esc(v.file)}" title="seed ${v.seed} · ${v.seconds ?? "?"}s">
+            <img loading="lazy" src="${file(d.slug, `out/${p.id}/${v.file}`)}">
+            ${starred ? `<span class="st">★</span>` : ""}
+            <span class="n"><span>${esc(v.file.split("-")[0])}</span><span>s${v.seed}</span></span></div>`;
+        }).join("")}
+      </div>
+      <details data-key="${esc(p.id)}" ${S.openDetails?.has(p.id) ? "open" : ""}><summary>Exact prompt</summary><pre class="prompt mono">${esc(p.prompt || "")}</pre></details>
+      ${renderNotes(notes)}
+      <div class="note-box"><textarea placeholder="Note for Claude about this panel (e.g. 'hair too dark, keep v003 pose')" data-note-panel="${esc(p.id)}"></textarea><button data-send-note="${esc(p.id)}">Send</button></div>
+    </div>
+  </section>`;
+}
+
+function renderNotes(notes) {
+  if (!notes.length) return "";
+  return `<div class="notes">${notes.map(n => `<div class="note ${n.done ? "done" : ""}">
+    ${n.file ? `<span class="mono">${esc(n.file)}</span> · ` : ""}${esc(n.text)} <span class="label">${esc(n.at)}${n.done ? " · done" : " · waiting for Claude"}</span>
+    ${n.reply ? `<div class="reply">↳ ${esc(n.reply)}</div>` : ""}</div>`).join("")}</div>`;
+}
+
+function renderStrip() {
+  const d = S.data;
+  const panels = d.panels.filter(p => p.strip !== false);
+  return `<div class="strip">${panels.map(p => {
+    const src = p.final ? file(d.slug, `final/${p.id}.png`, p.final) : p.pick ? file(d.slug, `out/${p.id}/${p.pick}`) : null;
+    return src ? `<img src="${src}" title="${esc(p.id)}" data-open="${esc(p.id)}" data-file="${esc(p.pick)}">` : `<div class="missing">${esc(p.id)} · not generated</div>`;
+  }).join("")}</div>`;
+}
+
+// ---- lightbox ----
+function openLb(panelId, fileName) {
+  const p = S.data.panels.find(x => x.id === panelId);
+  if (!p || !p.versions.length) return;
+  const list = [...p.versions].reverse();
+  S.lb = { panel: panelId, list, i: Math.max(0, list.findIndex(v => v.file === fileName)) };
+  $("#lb").classList.add("on"); drawLb();
+}
+function openRef(name) {
+  S.lb = { ref: name, list: [], i: 0 };
+  $("#lbStage").innerHTML = `<figure><img src="${file(S.data.slug, "refs/" + encodeURIComponent(name))}"><figcaption>${esc(name)}</figcaption></figure>`;
+  $("#lbInfo").textContent = "reference image";
+  $("#lb").classList.add("on");
+}
+function drawLb() {
+  const { panel, list, i } = S.lb;
+  const p = S.data.panels.find(x => x.id === panel);
+  const v = list[i];
+  const fig = (f, cap) => `<figure><img src="${file(S.data.slug, `out/${panel}/${f}`)}"><figcaption>${cap}</figcaption></figure>`;
+  let html = fig(v.file, `${esc(v.file)} · seed ${v.seed} · ${v.seconds ?? "?"}s${v.file === p.pick ? " · used" : ""}`);
+  if (S.compare && p.pick && p.pick !== v.file) html = fig(p.pick, `${esc(p.pick)} · used`) + html;
+  $("#lbStage").innerHTML = html;
+  const starred = S.data.state.stars[`${panel}/${v.file}`];
+  $("#lbStar").textContent = starred ? "★ Starred (s)" : "☆ Star (s)";
+  $("#lbPick").disabled = v.file === p.pick && !!p.explicit_pick;
+  $("#lbInfo").textContent = `${panel} · ${i + 1}/${list.length}`;
+}
+function closeLb() { $("#lb").classList.remove("on"); S.lb = null; }
+let lbBusy = false;
+async function lbAct(fn) { if (lbBusy || !S.lb || S.lb.ref) return; lbBusy = true; try { await fn(); await refresh(); if (S.lb) drawLb(); } catch {} finally { lbBusy = false; } }
+const lbPick = () => lbAct(async () => {
+  const v = S.lb.list[S.lb.i]; const p = S.data.panels.find(x => x.id === S.lb.panel);
+  if (p && p.explicit_pick === v.file) return;
+  await api(`/api/stories/${S.slug}/pick`, { method: "POST", body: { panel: S.lb.panel, file: v.file } });
+});
+const lbStar = () => lbAct(async () => {
+  const v = S.lb.list[S.lb.i]; const on = !S.data.state.stars[`${S.lb.panel}/${v.file}`];
+  await api(`/api/stories/${S.slug}/star`, { method: "POST", body: { panel: S.lb.panel, file: v.file, value: on } });
+});
+const lbMove = k => { if (!S.lb?.list.length) return; S.lb.i = (S.lb.i + k + S.lb.list.length) % S.lb.list.length; drawLb(); };
+
+$("#lbPrev").onclick = () => lbMove(-1); $("#lbNext").onclick = () => lbMove(1);
+$("#lbClose").onclick = closeLb; $("#lbPick").onclick = lbPick; $("#lbStar").onclick = lbStar;
+$("#lbCompare").onclick = () => { S.compare = !S.compare; drawLb(); };
+$("#lb").addEventListener("click", e => { if (e.target.id === "lb" || e.target.classList.contains("stage")) closeLb(); });
+document.addEventListener("keydown", e => {
+  if (!S.lb || e.target.tagName === "TEXTAREA" || e.repeat || e.metaKey || e.ctrlKey) return;
+  if (e.key === "Escape") closeLb();
+  if (S.lb.ref) return;
+  if (e.key === "ArrowLeft") lbMove(-1);
+  if (e.key === "ArrowRight") lbMove(1);
+  if (e.key === "p") lbPick();
+  if (e.key === "s") lbStar();
+  if (e.key === "c") { S.compare = !S.compare; drawLb(); }
+});
+
+// ---- main clicks ----
+$("#main").addEventListener("click", async e => {
+  const t = e.target.closest("[data-gen],[data-open],[data-open-ref],[data-send-note],[data-cancel],[data-toggle-final]");
+  if (!t) return;
+  if (t.dataset.gen) {
+    t.disabled = true;
+    await api("/api/generate", { method: "POST", body: { story: S.slug, panel: t.dataset.gen, count: +t.dataset.n } }).catch(() => {});
+    refresh();
+  } else if (t.dataset.cancel) {
+    await api(`/api/jobs/${t.dataset.cancel}`, { method: "DELETE" }).catch(() => {}); refresh();
+  } else if (t.dataset.toggleFinal) {
+    S.showFinal[t.dataset.toggleFinal] = !S.showFinal[t.dataset.toggleFinal]; render();
+  } else if (t.dataset.openRef) {
+    openRef(t.dataset.openRef);
+  } else if (t.dataset.open) {
+    openLb(t.dataset.open, t.dataset.file);
+  } else if ("sendNote" in t.dataset) {
+    const panel = t.dataset.sendNote;
+    const ta = $(`textarea[data-note-panel="${CSS.escape(panel)}"]`);
+    const text = ta.value.trim(); if (!text) return;
+    const p = S.data.panels.find(x => x.id === panel);
+    await api(`/api/stories/${S.slug}/notes`, { method: "POST", body: { panel: panel || null, file: p?.pick || null, text } });
+    ta.value = ""; refresh();
+  }
+});
+$("#storySel").onchange = e => { S.slug = e.target.value; try { localStorage.setItem("ms.story", S.slug); } catch {} refresh(); };
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { S.view = b.dataset.view; try { localStorage.setItem("ms.view", S.view); } catch {} render(); });
+$("#composeBtn").onclick = async () => { const r = await api(`/api/stories/${S.slug}/compose`, { method: "POST" }); if (r.missing?.length) alertBar("not generated yet: " + r.missing.join(", ")); refresh(); };
+
+// ---- live updates: server bumps a counter on any change; re-fetch when it moves (but not while typing) ----
+let pending = false;
+function onChange() {
+  const typing = document.activeElement?.tagName === "TEXTAREA" && document.activeElement.value;
+  if (typing) { pending = true; return; }
+  refresh();
+}
+document.addEventListener("focusout", () => { if (pending) { pending = false; refresh(); } });
+(async () => {
+  await loadStories(); await refresh();
+  const es = new EventSource("/api/events");
+  let first = true;
+  es.onmessage = () => { if (first) { first = false; return; } onChange(); };
+})();
+</script>
+</body>
+</html>
