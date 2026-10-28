@@ -1,0 +1,75 @@
+title: Cheek Squish
+notes: |
+  Family slice-of-life short (Kai, Aoi, their daughter). Target look = the reference video:
+  muted cool lavender-grey grade, hazy window light, black sweater on Kai in every panel.
+  Workflow: make `sheet` and `room` first, pick the best of each, then every story panel
+  uses [sheet, room] as image 1 / image 2 (never the previous panel).
+
+defaults:
+  model: qwen-image-2.1-turbo   # 8 steps. Switch to qwen-image-2.1 (40 steps) for final quality.
+  quantize: 4                   # 24 GB Mac: 4. Try 6/8 only if memory allows.
+  width: 864                    # 3:4, ~1 MP, multiples of 32
+  height: 1152
+
+# Files in refs/ and the label the prompt uses for each ("Image N: <label>.")
+refs:
+  family-ref.png:
+    label: style and character reference - Kai (silver-white hair, black sweater), Aoi (mother) and their daughter, waving
+  couple-room-ref.png:
+    label: style reference - Kai and Aoi on the sofa in the living room
+  original-p01.png:
+    label: earlier panel of Kai pinching his daughter's cheeks on the sofa
+
+# Verbatim blocks. Panels pick which ones to include with `use:`. Change a block once and
+# every panel that uses it changes the same way - that's what keeps the vibe consistent.
+blocks:
+  style: >-
+    Soft pastel anime webtoon panel. Muted, low-contrast, cool lavender-grey color grading,
+    hazy soft daylight from a window with gentle bloom, thin clean lineart, soft cel-shading,
+    calm cozy slice-of-life manhwa mood. Same art style and colors as the reference images.
+    No text, no speech bubbles, no letters.
+  kai: >-
+    Kai, the father: young man with messy layered silver-white hair that partly covers his eyes,
+    pale lilac-grey eyes, small black stud earring, oversized plain black long-sleeve crewneck
+    sweater, black pants.
+  aoi: >-
+    Aoi, the mother: young woman with very long straight pastel periwinkle-blue hair to her waist,
+    a thin side braid, a white five-petal flower hairclip, white long-sleeve nightgown with frilled
+    cuffs, a ribbon tie at the chest and tiny pale flower print.
+  daughter: >-
+    Their daughter: a 4-year-old girl with long pastel periwinkle-blue hair, a thin side braid,
+    the same white five-petal flower hairclip, round soft face with big eyes, white long-sleeve
+    nightgown with a ribbon collar and tiny pale flower print.
+  setting: >-
+    The same living room as the reference: light grey sofa in the foreground, large window with
+    sheer white curtains on the left, kitchen counter with a glass candy jar, small potted plants
+    and wooden cabinets in the background on the right. Medium shot at sofa height, Kai always
+    on the left.
+
+avoid: >-
+  t-shirt, white shirt, grey shirt, dress shirt, navy or dark blue hair, short hair, bob cut,
+  pink dress, warm orange lighting, saturated colors, thick outlines, glossy shading, any text
+
+panels:
+  # ---- references (not in the strip) ---------------------------------
+  - id: sheet
+    title: Character sheet
+    strip: false
+    width: 1248
+    height: 832
+    ref_label: character reference sheet of Kai, Aoi and their daughter
+    refs: [family-ref.png]
+    use: [style, kai, aoi, daughter]
+    action: >-
+      Character turnaround sheet on a plain white background: Kai, Aoi and their daughter standing
+      side by side, full body, front view, relaxed neutral smiles, evenly lit, nothing else in frame.
+
+  - id: room
+    title: Room plate
+    strip: false
+    ref_label: the living room set, empty
+    refs: [couple-room-ref.png]
+    use: [style, setting]
+    action: >-
+      The living room from image 1 with nobody in it: empty light grey sofa in the foreground,
+      window and kitchen counter with the glass candy jar behind. Same camera height and lighting.
