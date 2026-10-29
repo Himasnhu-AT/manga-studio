@@ -182,6 +182,15 @@ def cmd_compose(a):
     print(json.dumps(r, indent=2))
 
 
+def cmd_video(a):
+    from pathlib import Path
+
+    from studio import video
+
+    s = st.load(a.story)
+    out = video.make_video(s, fade=a.fade, audio=Path(a.audio) if a.audio else None, out=Path(a.out) if a.out else None)
+    print(out)
+
 
 def cmd_new(a):
     d = st.STORIES / a.slug
@@ -256,6 +265,13 @@ def main():
     p.add_argument("story")
     p.add_argument("--panel")
     p.set_defaults(fn=cmd_compose)
+
+    p = sub.add_parser("video", help="mp4 of the composed panels (zoom + crossfades) -> final/<story>.mp4")
+    p.add_argument("story")
+    p.add_argument("--audio", help="audio file to lay under it (trimmed + faded to the video length)")
+    p.add_argument("--fade", type=float, default=0.5)
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_video)
 
     p = sub.add_parser("new", help="scaffold a story")
     p.add_argument("slug")
