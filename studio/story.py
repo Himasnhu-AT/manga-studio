@@ -40,6 +40,23 @@ class Story:
     def panels(self) -> list[dict]:
         return self.data.get("panels", [])
 
+    @property
+    def cast(self) -> dict:
+        return self.data.get("cast") or {}
+
+    @property
+    def format(self) -> dict:
+        f = {"mode": "page", "direction": "rtl", "page": {"width": 1654, "height": 2339}, "gutter": 0.018, "margin": 0.06}
+        f.update(self.data.get("format") or {})
+        return f
+
+    def cast_block(self, cid: str) -> str:
+        """Verbatim block for a cast member: blocks[cid] wins, else compiled from the structured fields."""
+        blocks = self.data.get("blocks", {}) or {}
+        if cid in blocks:
+            return blocks[cid]
+        return compile_cast(self.cast.get(cid) or {"name": cid})
+
     def panel(self, pid: str) -> dict:
         for p in self.panels:
             if p["id"] == pid:
@@ -88,16 +105,38 @@ class Story:
         return {"name": name, "path": str(p), "version": None, "label": label or refs_meta.get("label") or name}
 
     # ---- prompt ---------------------------------------------------------
+    def panel_refs(self, panel: dict) -> list:
+        """Explicit refs, then each `cast:` member's sheet (or first ref file) if not already there."""
+        refs = list(panel.get("refs", []) or [])
+        names = {r if isinstance(r, str) else r["ref"] for r in refs}
+        for cid in panel.get("cast", []) or []:
+            c = self.cast.get(cid)
+            if not c:
+                raise StoryError(f"panel {panel['id']!r} casts unknown character {cid!r} (have: {', '.join(self.cast) or 'none'})")
+            extra = c.get("sheet") or next(iter(c.get("refs") or []), None)
+            if extra and extra not in names and extra != panel["id"]:  # a sheet that casts its own characters
+                refs.append(extra)
+                names.add(extra)
+        return refs
+
     def build_prompt(self, panel: dict, refs: list[dict]) -> str:
         blocks = self.data.get("blocks", {}) or {}
         parts: list[str] = []
         if refs:
             lines = [f"Image {i}: {r['label']}." for i, r in enumerate(refs, 1)]
             parts.append("Reference images. " + " ".join(lines))
-        for key in panel.get("use", []):
-            if key not in blocks:
-                raise StoryError(f"panel {panel['id']!r} uses unknown block {key!r} (have: {', '.join(blocks)})")
-            parts.append(f"{key.upper()}: {blocks[key].strip()}")
+        use = list(panel.get("use", []) or [])
+        for cid in panel.get("cast", []) or []:
+            if cid not in use:
+                use.append(cid)
+        for key in use:
+            if key in blocks:
+                text = blocks[key]
+            elif key in self.cast:
+                text = self.cast_block(key)
+            else:
+                raise StoryError(f"panel {panel['id']!r} uses unknown block {key!r} (have: {', '.join(list(blocks) + list(self.cast))})")
+            parts.append(f"{key.upper()}: {text.strip()}")
         if panel.get("action"):
             parts.append(f"ACTION: {panel['action'].strip()}")
         avoid = panel.get("avoid", self.data.get("avoid"))
@@ -108,7 +147,7 @@ class Story:
     def plan(self, pid: str, seed: int | None = None) -> dict:
         """Everything needed to run one generation, fully resolved (no I/O besides ref lookups)."""
         panel = self.panel(pid)
-        refs = [self.resolve_ref(r) for r in panel.get("refs", [])]
+        refs = [self.resolve_ref(r) for r in self.panel_refs(panel)]
         if len(refs) > 10:
             raise StoryError("Qwen-Image-2.1 takes at most 10 reference images")
         s = self.settings(panel)
@@ -126,6 +165,21 @@ class Story:
             "strength": s["strength"],
             "output_resolution": s["output_resolution"],
         }
+
+
+def compile_cast(c: dict) -> str:
+    """Structured cast entry -> one verbatim block. Same fields, same order, every time."""
+    head = c.get("name", "")
+    if c.get("role"):
+        head += f", {c['role']}"
+    parts = [head + (f": {c['face']}." if c.get("face") else ".")]
+    if c.get("hair"):
+        parts.append(f"Hair: {c['hair']}.")
+    if c.get("outfit"):
+        parts.append(f"Outfit: {c['outfit']}.")
+    if c.get("palette"):
+        parts.append(f"Palette: {c['palette']}.")
+    return " ".join(parts)
 
 
 def slugify(s: str) -> str:

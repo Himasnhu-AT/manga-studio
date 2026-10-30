@@ -8,6 +8,12 @@ defaults:
   width: 864
   height: 1152
 
+format:
+  mode: page            # page | webtoon
+  direction: rtl        # rtl | ltr reading order
+  gutter: 0.018
+  margin: 0.06
+
 refs: {}
 #  my-ref.png:
 #    label: style reference - what this image shows
@@ -21,8 +27,20 @@ blocks:
   setting: >-
     Describe the main location once.
 
+# Characters. Each becomes a verbatim block with the same id (unless blocks: has one).
+cast: {}
+#  hero:
+#    name: Hero
+#    role: the lead
+#    face: ...
+#    hair: exact colour words
+#    outfit: named every time
+#    sheet: sheet
+
 avoid: >-
   any text
+
+pages: []   # page layout; fill with the Studio or POST /pages/auto
 
 panels:
   - id: sheet
