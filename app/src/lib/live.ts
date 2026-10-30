@@ -106,17 +106,39 @@ export function useLive<T>(fn: (() => Promise<T>) | null, deps: unknown[] = []) 
   return { data, error, loading: loading && data === undefined, reload, setData };
 }
 
-/** Debounced callback: for text fields that save as you type. */
+/**
+ * Debounced callback: for fields that save as you type. A pending call is flushed (not dropped)
+ * when the component unmounts or the window is hidden, so switching panels or closing the app
+ * right after typing still saves. The flush uses the last render's callback, which belongs to
+ * the component being unmounted (inspectors are keyed by panel id).
+ */
 export function useDebounced<A extends unknown[]>(fn: (...a: A) => void, ms = 400) {
   const t = useRef<number | undefined>(undefined);
+  const pending = useRef<A | null>(null);
   const f = useRef(fn);
   f.current = fn;
-  useEffect(() => () => window.clearTimeout(t.current), []);
+
+  const flush = useCallback(() => {
+    window.clearTimeout(t.current);
+    const a = pending.current;
+    pending.current = null;
+    if (a) f.current(...a);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [flush]);
+
   return useCallback(
     (...a: A) => {
       window.clearTimeout(t.current);
-      t.current = window.setTimeout(() => f.current(...a), ms);
+      pending.current = a;
+      t.current = window.setTimeout(flush, ms);
     },
-    [ms],
+    [ms, flush],
   );
 }
