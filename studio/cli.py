@@ -192,6 +192,37 @@ def cmd_video(a):
     print(out)
 
 
+def cmd_mcp(a):
+    from studio import mcp_server
+
+    mcp_server.main()
+
+
+def cmd_pipeline(a):
+    if a.action == "run":
+        body = {k: v for k, v in {"from": a.from_stage, "to": a.to, "provider": a.provider}.items() if v}
+        s = _api("POST", f"/api/stories/{a.story}/pipeline/run", json=body)
+    elif a.action == "task":
+        t = _api("GET", f"/api/stories/{a.story}/pipeline/task")
+        if not t:
+            print("no stage is waiting for an agent")
+            return
+        print(f"# stage: {t['stage']}\n\n{t['instructions']}\n\n# input\n{json.dumps(t['input'], indent=1)}")
+        return
+    elif a.action == "cancel":
+        _api("POST", f"/api/stories/{a.story}/pipeline/cancel", json={})
+        print("cancelled")
+        return
+    else:
+        s = _api("GET", f"/api/stories/{a.story}/pipeline")
+    print(f"provider: {s['provider']}   running: {s['running']}")
+    for x in s["stages"]:
+        prog = f" {x['progress']['done']}/{x['progress']['total']}" if x.get("progress") else ""
+        print(f"  {x['id']:10} {x['status']:15}{prog}  {x.get('detail') or ''}")
+    if s.get("task"):
+        print(f"\nwaiting for an agent on {s['task']['stage']!r}: `studio pipeline {a.story} task` shows it")
+
+
 def cmd_new(a):
     d = st.STORIES / a.slug
     if d.exists():
@@ -272,6 +303,16 @@ def main():
     p.add_argument("--fade", type=float, default=0.5)
     p.add_argument("--out")
     p.set_defaults(fn=cmd_video)
+
+    sub.add_parser("mcp", help="MCP bridge over stdio (claude mcp add manga-studio -- uv --directory <repo> run studio mcp)").set_defaults(fn=cmd_mcp)
+
+    p = sub.add_parser("pipeline", help="automated pipeline: status | run | task | cancel")
+    p.add_argument("story")
+    p.add_argument("action", nargs="?", default="status", choices=["status", "run", "task", "cancel"])
+    p.add_argument("--from", dest="from_stage", choices=["analysis", "script", "layout", "artwork", "lettering", "qa"])
+    p.add_argument("--to", choices=["analysis", "script", "layout", "artwork", "lettering", "qa"])
+    p.add_argument("--provider", choices=["agent", "ollama", "heuristic"])
+    p.set_defaults(fn=cmd_pipeline)
 
     p = sub.add_parser("new", help="scaffold a story")
     p.add_argument("slug")
