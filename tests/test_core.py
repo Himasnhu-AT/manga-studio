@@ -236,3 +236,22 @@ def test_one_word_strings_survive_yaml_round_trip(sample):
     p = st.load(sample).panel("p03")
     assert p["title"] == "Yes"
     assert [b["text"] for b in p["bubbles"]] == ["On", "12:30"]
+
+
+def test_auto_letter_keeps_bubbles_moved_while_planning(sample, monkeypatch):
+    """A bubble the user places during the (slow) salience search keeps the user's position."""
+    from studio import project as pj
+
+    with pj.edit(sample) as d:
+        pj.set_keys(pj.panel(d, "p03"), {"bubbles": [{"id": "a", "text": "First"}, {"id": "b", "text": "Second"}]})
+    real = lettering.salience
+
+    def slow_salience(img):
+        with pj.edit(sample) as d:  # the user drags bubble b mid-plan
+            pj.panel(d, "p03")["bubbles"][1]["at"] = pj.from_plain([0.25, 0.75])
+        return real(img)
+
+    monkeypatch.setattr(lettering, "salience", slow_salience)
+    n = lettering.auto_letter(st.load(sample), "p03")
+    bs = st.load(sample).panel("p03")["bubbles"]
+    assert n == 1 and bs[0]["at"] and bs[1]["at"] == [0.25, 0.75]

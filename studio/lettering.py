@@ -137,22 +137,41 @@ def plan_positions(bubbles: list[dict], W: int, H: int, sal: np.ndarray, protect
     return out
 
 
+def _same_bubble(a, b) -> bool:
+    if a.get("id") or b.get("id"):
+        return a.get("id") == b.get("id")
+    return a.get("text") == b.get("text")
+
+
 def auto_letter(story: Story, pid: str, overwrite: bool = False) -> int:
-    """Place bubbles that have no `at` (all of them with overwrite=True). Returns how many were placed."""
+    """Place bubbles that have no `at` (all of them with overwrite=True). Returns how many were placed.
+
+    Planning reads a snapshot and can take seconds, while the user may be dragging bubbles in the
+    Studio. So the write only touches the planned targets, matched by id (or text) in the fresh
+    file, and skips any that were placed or removed in the meantime."""
     panel = story.panel(pid)
     bubbles = panel.get("bubbles") or []
-    targets = [b for b in bubbles if overwrite or not b.get("at")]
+    targets = [i for i, b in enumerate(bubbles) if overwrite or not b.get("at")]
     if not targets:
         return 0
     W, H, img = _size(story, pid)
     new = plan_positions(bubbles, W, H, salience(img), panel.get("protect") or [], story.format.get("direction", "rtl"), overwrite)
+    written = 0
     with project.edit(story.slug) as data:
-        p = project.panel(data, pid)
-        for orig, nb in zip(p.get("bubbles") or [], new):
-            orig["at"] = project.from_plain(nb["at"])
+        cur = project.panel(data, pid).get("bubbles") or []
+        for i in targets:
+            planned, nb = bubbles[i], new[i]
+            # same index first (the common case), else the first bubble that is the same one
+            match = cur[i] if i < len(cur) and _same_bubble(cur[i], planned) else next((c for c in cur if _same_bubble(c, planned)), None)
+            if match is None or (not overwrite and match.get("at")):
+                continue  # deleted, or the user placed it while we were planning
+            if overwrite and match.get("at") != planned.get("at"):
+                continue  # the user moved it while we were planning: their position wins
+            match["at"] = project.from_plain(nb["at"])
             if nb.get("tail") is not None:
-                orig["tail"] = project.from_plain(nb["tail"])
-    return len(targets)
+                match["tail"] = project.from_plain(nb["tail"])
+            written += 1
+    return written
 
 
 def overlap_issues(story: Story, pid: str) -> list[str]:
