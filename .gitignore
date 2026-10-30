@@ -10,3 +10,4 @@ stories/*/state.json
 /graft/
 .claude/settings.local.json
 .studio/
+.claude/worktrees/
