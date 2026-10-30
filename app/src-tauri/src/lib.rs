@@ -8,6 +8,7 @@
 use std::fs::{self, File};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
+use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -81,7 +82,10 @@ fn spawn_backend(state: &Backend) {
     let mut cmd = Command::new(uv);
     cmd.args(["run", "studio", "serve", "--port", &PORT.to_string()])
         .current_dir(&root)
-        .stdin(Stdio::null());
+        .stdin(Stdio::null())
+        // Own process group: the child is `uv`, which doesn't forward signals to the Python server,
+        // so stopping it means signalling the whole group (see stop_child).
+        .process_group(0);
     match log.as_ref().and_then(|f| Some((f.try_clone().ok()?, f.try_clone().ok()?))) {
         Some((out, err)) => {
             cmd.stdout(out).stderr(err);
@@ -94,6 +98,20 @@ fn spawn_backend(state: &Backend) {
         Ok(child) => *state.child.lock().unwrap() = Some(child),
         Err(e) => *state.error.lock().unwrap() = Some(format!("could not start the backend: {e}")),
     }
+}
+
+/// Stop a backend we spawned: SIGTERM the process group (uvicorn shuts down cleanly), then SIGKILL it.
+fn stop_child(mut c: Child) {
+    let group = format!("-{}", c.id());
+    let _ = Command::new("kill").args(["-TERM", "--", &group]).status();
+    for _ in 0..30 {
+        if matches!(c.try_wait(), Ok(Some(_))) && !backend_up() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = Command::new("kill").args(["-KILL", "--", &group]).status();
+    let _ = c.wait();
 }
 
 #[tauri::command]
@@ -119,9 +137,9 @@ fn backend_status(state: State<'_, Backend>) -> BackendStatus {
 
 #[tauri::command]
 fn restart_backend(state: State<'_, Backend>) -> Result<(), String> {
-    if let Some(mut c) = state.child.lock().unwrap().take() {
-        let _ = c.kill();
-        let _ = c.wait();
+    let child = state.child.lock().unwrap().take();
+    if let Some(c) = child {
+        stop_child(c);
     } else if backend_up() {
         return Err("The backend was started outside the app; restart it where it runs.".into());
     }
@@ -151,16 +169,10 @@ pub fn run() {
 
     app.run(|handle, event| {
         if let RunEvent::Exit = event {
-            // Stop only the backend we started. Interrupt first so uvicorn exits cleanly.
-            if let Some(mut c) = handle.state::<Backend>().child.lock().unwrap().take() {
-                let _ = Command::new("kill").args(["-INT", &c.id().to_string()]).status();
-                for _ in 0..30 {
-                    if matches!(c.try_wait(), Ok(Some(_))) {
-                        return;
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                let _ = c.kill();
+            // Stop only the backend we started (the whole process group, not just `uv`).
+            let child = handle.state::<Backend>().child.lock().unwrap().take();
+            if let Some(c) = child {
+                stop_child(c);
             }
         }
     });
