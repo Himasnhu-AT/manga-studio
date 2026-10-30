@@ -39,3 +39,10 @@ re-read whole files.
 After big code changes, refresh the graph with `graft build` (deterministic,
 no API key, $0).
 <!-- graft:end -->
+
+## manga-studio workflow
+
+This repo is a local manga/webtoon studio (Tauri + React app in `app/`, Python backend in `studio/`).
+Before driving it (writing prompts, generating panels, running the pipeline), read `CLAUDE.md`: it is the
+operating manual for every agent (commands, MCP tools, the feedback loop, consistency rules).
+`docs/ARCHITECTURE.md` is the data model and API contract. Use `pnpm` for the app, never npm.
