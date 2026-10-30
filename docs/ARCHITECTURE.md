@@ -5,14 +5,15 @@ Local-first manga/webtoon studio. Three processes, all on this Mac:
 ```
  Tauri shell (app/src-tauri, Rust)      starts/stops the Python backend, hosts the webview
    └─ React UI (app/src, Vite + TS)     Library, Studio, Pipeline, Reader, Onboarding
- Python backend (studio/, FastAPI)      http://127.0.0.1:7860  — model worker, story files, pipeline
+ Python backend (studio/, FastAPI)      http://127.0.0.1:7860: model worker, story files, pipeline
    └─ Qwen-Image-2.1 via mflux (MLX)    kept loaded in the worker thread
  MCP bridge (studio mcp, stdio)         Claude Code / Codex / any MCP client -> backend HTTP API
  Ollama (optional, :11434)              local LLM for pipeline stages when no agent is driving
 ```
 
 The UI talks to the backend over HTTP (`VITE_API` or `http://127.0.0.1:7860`). The backend also
-serves the built UI (`app/dist`) at `/`, so the app works in a plain browser too. Live refresh is
+serves the built UI (`app/dist`) at `/` (assets under `/assets/`), so the app works in a plain browser
+too; the v0.1 dashboard moved to `/legacy`. Live refresh is
 the existing SSE stream `/api/events` (an integer revision; refetch when it moves).
 
 ## Files on disk (source of truth)
@@ -26,7 +27,8 @@ stories/<slug>/source.md             pipeline source text (Mode B)
 stories/<slug>/pipeline/             stage outputs: analysis.json, script.json, qa.json, state.json
 stories/<slug>/source-coverage.json  char spans of source.md -> panel ids
 stories/<slug>/final/                composed PNGs, strip, video, export/ (pdf, svg, png bundle)
-.studio/settings.json                app settings (onboarding, LLM provider, agent) — gitignored
+.studio/settings.json                app settings (onboarding, LLM provider, agent); gitignored, STUDIO_SETTINGS overrides
+.studio/backend.log                  backend output when the Tauri shell started it
 ```
 
 story.yaml is edited with ruamel round-trip (`studio/project.py`) so comments and key order
@@ -102,7 +104,7 @@ v0.1: `GET /api/status`, `GET /api/stories`, `GET /api/stories/{slug}`, `POST /a
 | POST | /api/projects | `{title, slug?, mode, direction, template: blank\|sample}` | `{slug}` |
 | PATCH | /api/stories/{slug} | any of `{title, notes, format, blocks, avoid}` | `{ok}` |
 | POST | /api/stories/{slug}/panels | `{id?, title?, after?, page?}` | `{id}` |
-| PATCH | /api/stories/{slug}/panels/{pid} | any panel key (`action, refs, use, cast, bubbles, sfx, layers, crop, protect, title, seed, strength, strip`) | `{ok}` |
+| PATCH | /api/stories/{slug}/panels/{pid} | any panel key (`action, refs, use, cast, bubbles, sfx, layers, crop, protect, title, seed, strength, strip, width, height, ref_label, avoid, steps, output_resolution`, plus pipeline keys `camera, source_span, beat, location`); `null` deletes a key | `{ok}` |
 | DELETE | /api/stories/{slug}/panels/{pid} | | `{ok}` |
 | PUT | /api/stories/{slug}/pages | `{pages: [...]}` | `{ok}` |
 | POST | /api/stories/{slug}/pages/auto | `{per_page?: 4}` | `{pages}` |
@@ -131,7 +133,7 @@ saved as a new version.
 ### Pipeline (Mode B)
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| POST | /api/pipeline/new | `{title, text, mode, direction, provider?}` | `{slug}` (creates project + source.md) |
+| POST | /api/pipeline/new | `{title, text, mode, direction, provider?, autostart?: true}` | `{slug}` (creates project + source.md, starts the run unless `autostart: false`) |
 | PUT | /api/stories/{slug}/source | `{text}` | `{ok}` |
 | GET | /api/stories/{slug}/source | | `{text}` |
 | GET | /api/stories/{slug}/pipeline | | `PipelineState` |
@@ -168,11 +170,27 @@ regenerate up to 3 times, then are `flagged` for a manual fix in Studio.
 
 ## MCP bridge (`uv run studio mcp`)
 
-stdio server (python `mcp` FastMCP) that proxies to the HTTP API. Tools: `list_projects`,
-`get_project`, `create_project`, `update_panel`, `add_panel`, `set_cast`, `prompt_preview`,
-`generate` (optional wait), `view_image` (returns the PNG so the agent can look), `get_feedback`,
-`resolve_note`, `pick_version`, `auto_letter`, `export`, `pipeline_new`, `pipeline_status`,
-`pipeline_run`, `pipeline_task`, `pipeline_submit`.
+stdio server built on mcp 2.3's `MCPServer` (FastMCP no longer exists there) that proxies to the HTTP
+API at `STUDIO_URL` (default http://127.0.0.1:7860). The workflow and consistency rules ship in the
+server instructions. 24 tools: `list_projects`, `get_project`, `create_project`, `update_story`,
+`update_panel`, `add_panel`, `set_cast`, `prompt_preview`, `generate` (waits by default),
+`copilot`, `view_image` (returns the picture, max 1024 px JPEG, so the agent can look), `jobs`,
+`get_feedback`, `resolve_note`, `pick_version`, `auto_letter`, `export`, `pipeline_new`,
+`pipeline_status`, `pipeline_run`, `pipeline_task`, `pipeline_submit`. When the backend isn't
+running, tools fail with a message telling the agent to open the app or run `uv run studio serve`.
 
-Register: `claude mcp add manga-studio -- uv --directory <repo> run studio mcp`
+Register: `claude mcp add --scope user manga-studio -- uv --directory <repo> run studio mcp`
+(the app's Connect button runs exactly this)
 (Codex: `codex mcp add manga-studio -- uv --directory <repo> run studio mcp`).
+
+## Environment variables
+
+| Name | Default | What |
+|---|---|---|
+| `STUDIO_URL` | http://127.0.0.1:7860 | backend URL for the CLI and the MCP bridge (and the Vite dev proxy) |
+| `STUDIO_ENGINE` | `mflux` | `mock` draws placeholders instead of loading the model (`serve --mock`) |
+| `STUDIO_STORIES` | `<repo>/stories` | stories directory (tests and QA point it at a scratch copy) |
+| `STUDIO_SETTINGS` | `<repo>/.studio/settings.json` | app settings file |
+| `STUDIO_MLX_CACHE_GB` | 2 | cap on MLX's buffer cache |
+| `MANGA_STUDIO_ROOT` | the checkout the app was built from | repo the Tauri shell runs the backend in |
+| `VITE_API` | http://127.0.0.1:7860 | backend URL baked into a Tauri production build |
