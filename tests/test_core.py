@@ -197,7 +197,7 @@ def test_settings_and_app_endpoints(monkeypatch):
     assert set(ms) == {"qwen-image-2.1-turbo", "qwen-image-2.1"}
     assert client.post("/api/models/nope/download").status_code == 404
 
-    monkeypatch.setattr(appsvc, "_agent", lambda b: {"installed": True, "connected": b == "claude"})
+    monkeypatch.setattr(appsvc, "_agent", lambda b, **_: {"installed": True, "connected": b == "claude"})
     monkeypatch.setattr(appsvc, "_ollama", lambda url: {"installed": True, "running": False, "models": []})
     integ = client.get("/api/integrations").json()
     assert integ["claude"]["connected"] and not integ["codex"]["connected"]
@@ -224,3 +224,15 @@ def test_sheet_casting_itself_and_unplaced_bubbles(sample):
     assert "bubble 1 has no position" in lettering.overlap_issues(s, "p06")
     assert lettering.auto_letter(s, "p06") == 1
     assert all(b.get("at") for b in st.load(sample).panel("p06")["bubbles"])
+
+
+def test_one_word_strings_survive_yaml_round_trip(sample):
+    """ruamel writes YAML 1.2, PyYAML reads 1.1: `Yes`/`On`/`12:30` must come back as strings."""
+    from studio import project as pj
+
+    with pj.edit(sample) as d:
+        p = pj.panel(d, "p03")
+        pj.set_keys(p, {"title": "Yes", "bubbles": [{"text": "On", "at": [0.5, 0.2]}, {"text": "12:30", "at": [0.5, 0.6]}]})
+    p = st.load(sample).panel("p03")
+    assert p["title"] == "Yes"
+    assert [b["text"] for b in p["bubbles"]] == ["On", "12:30"]

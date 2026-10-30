@@ -15,6 +15,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
+import yaml
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString, FoldedScalarString
@@ -65,7 +66,18 @@ def from_plain(obj, long_text: bool = True):
         return s
     if isinstance(obj, str) and long_text and len(obj) > 90 and "\n" not in obj:
         return FoldedScalarString(obj)
+    if isinstance(obj, str) and _pyyaml_retypes(obj):
+        return DoubleQuotedScalarString(obj)
     return obj
+
+
+def _pyyaml_retypes(v: str) -> bool:
+    """We write with ruamel (YAML 1.2) but `story.load` reads with PyYAML (YAML 1.1), which turns
+    plain `Yes`/`No`/`On`/`Off`/`y`, `12:30` (base 60), `1e3` etc. into non-strings. Quote those."""
+    try:
+        return yaml.safe_load(v) != v
+    except yaml.YAMLError:
+        return True
 
 
 _FLOW_SPECIAL = set(",[]{}:#?&*!|>'\"%@`")
@@ -74,7 +86,7 @@ _FLOW_SPECIAL = set(",[]{}:#?&*!|>'\"%@`")
 def _flow_safe(v):
     """Inside `{...}`/`[...]` plain scalars can't hold , ? : # etc.; quote text like the hand-written yaml does."""
     if isinstance(v, str) and not isinstance(v, DoubleQuotedScalarString):
-        if not v or v != v.strip() or any(c in _FLOW_SPECIAL for c in v) or " " in v:
+        if not v or v != v.strip() or any(c in _FLOW_SPECIAL for c in v) or " " in v or _pyyaml_retypes(v):
             return DoubleQuotedScalarString(str(v))
     return v
 
