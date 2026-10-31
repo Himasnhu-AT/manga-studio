@@ -1,6 +1,7 @@
 """MCP bridge: lets Claude Code, Codex or any MCP client drive manga-studio.
 
-    claude mcp add manga-studio -- uv --directory <repo> run studio mcp
+    claude mcp add --scope user manga-studio -- manga-studio-mcp
+    (manga-studio-mcp is the launcher written by the app's Connect or `studio mcp-install`)
 
 A stdio server that proxies to the studio backend's HTTP API (STUDIO_URL, default
 http://127.0.0.1:7860). The backend owns the model, the job queue and the files; this process is thin.

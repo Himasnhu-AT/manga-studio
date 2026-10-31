@@ -192,6 +192,18 @@ def cmd_video(a):
     print(out)
 
 
+def cmd_mcp_install(a):
+    import shlex
+
+    from studio import appsvc
+
+    path = appsvc.install_launcher()
+    print(f"wrote {path}")
+    print("register it once, in any terminal:")
+    print("  " + shlex.join(appsvc.mcp_add_command("claude")))
+    print("  " + shlex.join(appsvc.mcp_add_command("codex")))
+
+
 def cmd_mcp(a):
     from studio import mcp_server
 
@@ -304,7 +316,8 @@ def main():
     p.add_argument("--out")
     p.set_defaults(fn=cmd_video)
 
-    sub.add_parser("mcp", help="MCP bridge over stdio (claude mcp add manga-studio -- uv --directory <repo> run studio mcp)").set_defaults(fn=cmd_mcp)
+    sub.add_parser("mcp", help="MCP bridge over stdio (agents run it through the manga-studio-mcp launcher)").set_defaults(fn=cmd_mcp)
+    sub.add_parser("mcp-install", help="write ~/.local/bin/manga-studio-mcp and print the claude/codex mcp add commands").set_defaults(fn=cmd_mcp_install)
 
     p = sub.add_parser("pipeline", help="automated pipeline: status | run | task | cancel")
     p.add_argument("story")

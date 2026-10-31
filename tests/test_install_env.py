@@ -36,7 +36,7 @@ def test_checkout_defaults_unchanged():
     assert p["settings"] == str(ROOT / ".studio" / "settings.json")
     assert p["app_dist"] == str(ROOT / "app" / "dist")
     assert p["dashboard"] == str(ROOT / "dashboard" / "index.html")
-    assert p["mcp"] == ["uv", "--directory", str(ROOT), "run", "studio", "mcp"]
+    assert p["mcp"] == ["manga-studio-mcp"]  # registrations never carry a path
 
 
 def test_installed_overrides(tmp_path):
@@ -51,35 +51,50 @@ def test_installed_overrides(tmp_path):
     assert p["home"] == str(home.resolve())
     assert p["settings"] == str(home.resolve() / "settings.json")  # follows STUDIO_HOME
     assert p["app_dist"] == str(tmp_path / "dist")
-    assert p["mcp"] == [str(home / "bin" / "manga-studio-mcp")]
+    assert p["mcp"] == ["manga-studio-mcp"]
     # an explicit STUDIO_SETTINGS still wins over STUDIO_HOME
     assert _probe(STUDIO_HOME=str(home), STUDIO_SETTINGS=str(tmp_path / "s.json"))["settings"] == str(tmp_path / "s.json")
 
 
-def test_mcp_registration_carries_env(monkeypatch):
+def test_mcp_registration_is_one_plain_command(monkeypatch, tmp_path):
     for k in OVERRIDES:
         monkeypatch.delenv(k, raising=False)
-    plain = appsvc.mcp_add_command("claude")
-    assert plain == ["claude", "mcp", "add", "--scope", "user", "manga-studio", "--", "uv", "--directory", str(st.ROOT), "run", "studio", "mcp"]
+    monkeypatch.setenv("STUDIO_MCP_BIN_DIR", str(tmp_path / "bin"))
+    # no paths in the registration, ever: the launcher on PATH carries them
+    assert appsvc.mcp_add_command("claude") == ["claude", "mcp", "add", "--scope", "user", "manga-studio", "--", "manga-studio-mcp"]
+    assert appsvc.mcp_add_command("codex") == ["codex", "mcp", "add", "manga-studio", "--", "manga-studio-mcp"]
 
-    launcher = "/Users/x/Library/Application Support/Manga Studio/bin/manga-studio-mcp"
-    monkeypatch.setenv("STUDIO_MCP_LAUNCHER", launcher)
+    # a checkout: the launcher runs studio mcp in place
+    launcher = appsvc.install_launcher()
+    assert launcher == tmp_path / "bin" / "manga-studio-mcp" and os.access(launcher, os.X_OK)
+    assert f"exec uv --directory {shlex.quote(str(st.ROOT))} run studio mcp" in launcher.read_text()
+
+    # the installed app: the launcher hands off to the app's own launcher (paths with spaces quoted)
+    app_launcher = "/Users/x/Library/Application Support/Manga Studio/bin/manga-studio-mcp"
+    monkeypatch.setenv("STUDIO_MCP_LAUNCHER", app_launcher)
     monkeypatch.setenv("STUDIO_STORIES", "/Users/x/Manga Studio/stories")
-    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "/Users/x/Library/Application Support/Manga Studio/venv")
-    claude = appsvc.mcp_add_command("claude")
-    assert claude[:6] == ["claude", "mcp", "add", "--scope", "user", "manga-studio"]
-    assert claude[claude.index("--") + 1 :] == [launcher]
-    assert "-e" in claude and "STUDIO_STORIES=/Users/x/Manga Studio/stories" in claude
-    codex = appsvc.mcp_add_command("codex")
-    assert codex[:4] == ["codex", "mcp", "add", "manga-studio"] and "--env" in codex and codex[-1] == launcher
+    appsvc.install_launcher()
+    assert f"exec {shlex.quote(app_launcher)} \"$@\"" in launcher.read_text()
 
     monkeypatch.setattr(appsvc, "_agent", lambda b, **_: {"installed": True, "connected": False})
     monkeypatch.setattr(appsvc, "_ollama", lambda url: {"installed": False, "running": False, "models": []})
     mcp = appsvc.integrations()["mcp"]
-    assert mcp["command"] == [launcher]
-    assert mcp["json"]["mcpServers"]["manga-studio"]["env"]["STUDIO_STORIES"] == "/Users/x/Manga Studio/stories"
-    # the shown command is shell-safe (paths with spaces) and is exactly what connect() runs
-    assert shlex.split(mcp["add"]["claude"]) == claude
+    assert mcp["command"] == ["manga-studio-mcp"]
+    assert mcp["env"]["STUDIO_STORIES"] == "/Users/x/Manga Studio/stories"  # shown, not registered
+    assert shlex.split(mcp["add"]["claude"]) == appsvc.mcp_add_command("claude")
+
+
+def test_connect_replaces_an_old_path_registration(monkeypatch, tmp_path):
+    monkeypatch.setenv("STUDIO_MCP_BIN_DIR", str(tmp_path / "bin"))
+    ran = []
+    monkeypatch.setattr(appsvc, "_agent", lambda b, **_: {"installed": True, "connected": True})
+    monkeypatch.setattr(appsvc, "_registered_command", lambda b: "uv --directory /Users/x/manga-studio run studio mcp")
+    monkeypatch.setattr(appsvc, "_run", lambda cmd, timeout=8: (ran.append(cmd), (True, ""))[1])
+    r = appsvc.connect("claude")
+    assert r["ok"] and ran == [["claude", "mcp", "remove", "--scope", "user", "manga-studio"], appsvc.mcp_add_command("claude")]
+    ran.clear()
+    monkeypatch.setattr(appsvc, "_registered_command", lambda b: "manga-studio-mcp")
+    assert appsvc.connect("claude")["output"] == "already connected" and ran == []
 
 
 def test_sample_template_falls_back_to_bundled_copy(monkeypatch, tmp_path):

@@ -49,7 +49,7 @@ settings/log/venv in `~/Library/Application Support/Manga Studio/`. Never write 
 ## MCP or CLI
 
 When `manga-studio` MCP tools are available (registered with
-`claude mcp add manga-studio -- uv --directory <repo> run studio mcp`), prefer them: they go through
+`claude mcp add --scope user manga-studio -- manga-studio-mcp`; the app's Connect button does it), prefer them: they go through
 the same running backend the app uses, and `view_image` hands you the picture directly. Tools:
 `list_projects`, `get_project`, `create_project`, `update_story`, `update_panel`, `add_panel`,
 `set_cast`, `prompt_preview`, `generate`, `copilot`, `view_image`, `jobs`, `get_feedback`,

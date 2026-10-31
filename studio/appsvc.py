@@ -197,29 +197,77 @@ MCP_NAME = "manga-studio"
 MCP_ENV_KEYS = ("STUDIO_STORIES", "STUDIO_SETTINGS", "STUDIO_HOME", "UV_PROJECT_ENVIRONMENT", "PYTHONPYCACHEPREFIX")
 
 
-def mcp_command() -> list[str]:
-    # The installed app writes a launcher script outside its (read-only, signed) bundle and tells us
-    # where; it runs `uv run --frozen --project <bundle>/backend studio mcp` with the right env.
-    launcher = os.environ.get("STUDIO_MCP_LAUNCHER")
-    if launcher:
-        return [launcher]
+LAUNCHER_NAME = "manga-studio-mcp"
+
+
+def launcher_path() -> Path:
+    """Where the global `manga-studio-mcp` command lives (on PATH for anyone who installed uv)."""
+    return Path(os.environ.get("STUDIO_MCP_BIN_DIR") or Path.home() / ".local" / "bin") / LAUNCHER_NAME
+
+
+def _launcher_target() -> list[str]:
+    # The installed app writes its own launcher outside its (read-only, signed) bundle and tells us
+    # where; it sets the data env and runs the bundled `studio mcp`. A checkout runs it in place.
+    app_launcher = os.environ.get("STUDIO_MCP_LAUNCHER")
+    if app_launcher:
+        return [app_launcher]
     return ["uv", "--directory", str(ROOT), "run", "studio", "mcp"]
 
 
+def install_launcher() -> Path:
+    """Write ~/.local/bin/manga-studio-mcp, so agents register one plain command on every Mac
+    (`claude mcp add --scope user manga-studio -- manga-studio-mcp`) instead of a path into this
+    checkout or the app bundle. Rewritten on connect, so it follows the app or checkout in use."""
+    path = launcher_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    script = (
+        "#!/bin/sh\n"
+        "# Manga Studio MCP bridge. Written by the app when you press Connect; safe to delete.\n"
+        'PATH="$PATH:$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin"\n'
+        "export PATH\n"
+        f'exec {shlex.join(_launcher_target())} "$@"\n'
+    )
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(script)
+    tmp.chmod(0o755)
+    tmp.replace(path)
+    return path
+
+
+def mcp_command() -> list[str]:
+    return [LAUNCHER_NAME]
+
+
 def mcp_env() -> dict[str, str]:
+    """Env the bridge runs with (shown in the app). The launcher sets it, so registrations don't."""
     return {k: os.environ[k] for k in MCP_ENV_KEYS if os.environ.get(k)}
 
 
 def mcp_add_command(agent: str) -> list[str]:
     """The exact `claude mcp add` / `codex mcp add` that connect() runs (and the app shows)."""
-    env = mcp_env()
     if agent == "claude":
-        flags = [a for k, v in env.items() for a in ("-e", f"{k}={v}")]
-        return ["claude", "mcp", "add", "--scope", "user", MCP_NAME, *flags, "--", *mcp_command()]
+        return ["claude", "mcp", "add", "--scope", "user", MCP_NAME, "--", *mcp_command()]
     if agent == "codex":
-        flags = [a for k, v in env.items() for a in ("--env", f"{k}={v}")]
-        return ["codex", "mcp", "add", MCP_NAME, *flags, "--", *mcp_command()]
+        return ["codex", "mcp", "add", MCP_NAME, "--", *mcp_command()]
     raise KeyError(agent)
+
+
+def _registered_command(binary: str) -> str | None:
+    """The command an agent has registered for manga-studio, from its config file (None if unknown)."""
+    home = Path.home()
+    try:
+        if binary == "claude":
+            cfg = json.loads((home / ".claude.json").read_text())
+            entry = (cfg.get("mcpServers") or {}).get(MCP_NAME)
+            return " ".join([entry.get("command", ""), *entry.get("args", [])]).strip() if entry else None
+        if binary == "codex":
+            text = (home / ".codex" / "config.toml").read_text()
+            for head in (f"[mcp_servers.{MCP_NAME}]", f'[mcp_servers."{MCP_NAME}"]'):
+                if head in text:
+                    return text.split(head, 1)[1].split("\n[", 1)[0]
+    except (OSError, ValueError, AttributeError):
+        return None
+    return None
 
 
 def _run(cmd: list[str], timeout: float = 8) -> tuple[bool, str]:
@@ -303,8 +351,17 @@ def connect(agent: str) -> dict:
     state = _agent(agent, fresh=True)
     if not state["installed"]:
         return {"ok": False, "command": shown, "output": f"{agent} CLI not found on PATH"}
+    install_launcher()
     if state["connected"]:
-        return {"ok": True, "command": shown, "output": "already connected"}
+        old = _registered_command(agent)
+        if old is not None and LAUNCHER_NAME in old:
+            return {"ok": True, "command": shown, "output": "already connected"}
+        # An older registration (a path into a checkout or an old app): replace it with the launcher.
+        _run(_remove_cmd(agent), timeout=20)
     ok, out = _run(cmd, timeout=20)
     _agent_cache.pop(agent, None)
     return {"ok": ok, "command": shown, "output": out}
+
+
+def _remove_cmd(agent: str) -> list[str]:
+    return ["claude", "mcp", "remove", "--scope", "user", MCP_NAME] if agent == "claude" else ["codex", "mcp", "remove", MCP_NAME]

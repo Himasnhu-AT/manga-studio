@@ -68,8 +68,9 @@ or a no-LLM heuristic.
 ## Connect an agent
 
 ```bash
-claude mcp add manga-studio -- uv --directory "$PWD" run studio mcp
-codex mcp add manga-studio -- uv --directory "$PWD" run studio mcp
+uv run studio mcp-install     # once: puts manga-studio-mcp on your PATH (the app's Connect does this too)
+claude mcp add --scope user manga-studio -- manga-studio-mcp
+codex mcp add manga-studio -- manga-studio-mcp
 ```
 
 Then ask: *"make the character sheet for cheek-squish, 4 seeds"* or *"run the pipeline task for my-story"*.

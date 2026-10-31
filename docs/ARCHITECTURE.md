@@ -216,13 +216,15 @@ server instructions. 24 tools: `list_projects`, `get_project`, `create_project`,
 `pipeline_status`, `pipeline_run`, `pipeline_task`, `pipeline_submit`. When the backend isn't
 running, tools fail with a message telling the agent to open the app or run `uv run studio serve`.
 
-Register: `claude mcp add --scope user manga-studio -- uv --directory <repo> run studio mcp`
-(the app's Connect button runs exactly this)
-(Codex: `codex mcp add manga-studio -- uv --directory <repo> run studio mcp`).
-In the installed app the command is the launcher script instead, plus the data env:
-`claude mcp add --scope user manga-studio -e STUDIO_STORIES=... -e STUDIO_SETTINGS=... -e STUDIO_HOME=... -e UV_PROJECT_ENVIRONMENT=... -e PYTHONPYCACHEPREFIX=... -- "~/Library/Application Support/Manga Studio/bin/manga-studio-mcp"`
-(codex: `--env`). The launcher runs `uv run --frozen --project <Resources>/backend studio mcp` and
-is rewritten on every launch, so moving or updating the app keeps the registration working.
+Register: `claude mcp add --scope user manga-studio -- manga-studio-mcp` (Codex: `codex mcp add manga-studio -- manga-studio-mcp`). The app's Connect button runs exactly this, and
+replaces an older registration that pointed at a path.
+`manga-studio-mcp` is a launcher in `~/.local/bin` (on PATH wherever uv is installed), written by
+Connect or `uv run studio mcp-install`. It never puts a path in the agent's config:
+- in a checkout it runs `uv --directory <repo> run studio mcp`;
+- in the installed app it hands off to the app's own launcher in
+  `~/Library/Application Support/Manga Studio/bin/`, which sets the data env and runs
+  `uv run --frozen --project <Resources>/backend studio mcp`. That one is rewritten on every launch,
+  so moving or updating the app keeps the registration working.
 `/api/integrations` returns the exact shell-quoted commands as `mcp.add.claude` / `mcp.add.codex`.
 
 ## Environment variables

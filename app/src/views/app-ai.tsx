@@ -16,7 +16,7 @@ const providerFor: Record<Agent, Settings["llm"]["provider"]> = { claude: "agent
 // plus -e/--env for its data folders; the backend builds that string (shell-quoted).
 export const mcpCommand = (cli: "claude" | "codex", i?: Integrations) =>
   i?.mcp.add?.[cli] ??
-  `${cli} mcp add ${cli === "claude" ? "--scope user " : ""}manga-studio -- ${(i?.mcp.command ?? ["uv", "--directory", "<repo>", "run", "studio", "mcp"]).join(" ")}`;
+  `${cli} mcp add ${cli === "claude" ? "--scope user " : ""}manga-studio -- ${(i?.mcp.command ?? ["manga-studio-mcp"]).join(" ")}`;
 
 export function AiConnect({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
   const ints = useOnce(() => sharedIntegrations());

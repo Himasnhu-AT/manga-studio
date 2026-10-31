@@ -201,7 +201,7 @@ def test_settings_and_app_endpoints(monkeypatch):
     monkeypatch.setattr(appsvc, "_ollama", lambda url: {"installed": True, "running": False, "models": []})
     integ = client.get("/api/integrations").json()
     assert integ["claude"]["connected"] and not integ["codex"]["connected"]
-    assert integ["mcp"]["command"][-2:] == ["studio", "mcp"]
+    assert integ["mcp"]["command"] == ["manga-studio-mcp"]
     assert client.post("/api/integrations/claude/connect").json()["output"] == "already connected"
 
 

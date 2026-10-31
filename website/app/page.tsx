@@ -218,8 +218,8 @@ function Agents() {
             <figcaption className="mt-4 pl-1 text-[13.5px] text-ink-3">An example request from the README.</figcaption>
           </figure>
           <div className="mt-8 space-y-3">
-            <Command label="connect Claude Code" lines={["# from the repo folder", 'claude mcp add --scope user manga-studio -- uv --directory "$PWD" run studio mcp']} />
-            <Command label="connect Codex" lines={['codex mcp add manga-studio -- uv --directory "$PWD" run studio mcp']} />
+            <Command label="connect Claude Code" lines={["# or press Connect in the app", 'claude mcp add --scope user manga-studio -- manga-studio-mcp']} />
+            <Command label="connect Codex" lines={['codex mcp add manga-studio -- manga-studio-mcp']} />
           </div>
           <p className="mt-4 text-[14px] text-ink-3">No agent? A local Ollama model can run the language stages instead.</p>
         </div>
@@ -303,7 +303,7 @@ function Start() {
             <h3 className="font-medium">Connect an agent</h3>
             <p className="mt-1 text-[15px] text-ink-2">Then ask it to run the pipeline for your story, or to draw a character sheet.</p>
             <div className="mt-4">
-              <Command label="connect Claude Code" lines={['claude mcp add --scope user manga-studio -- uv --directory "$PWD" run studio mcp']} />
+              <Command label="connect Claude Code" lines={['claude mcp add --scope user manga-studio -- manga-studio-mcp']} />
             </div>
           </div>
         </div>
