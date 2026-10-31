@@ -6,15 +6,16 @@
 // the slide into a crossfade.
 
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowLeft, ArrowRight, CheckCircle, CloudArrowDown, Cpu, HardDrives, Memory, WarningCircle, FilmStrip } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, CheckCircle, CloudArrowDown, Cpu, HardDrives, Memory, WarningCircle, FilmStrip, TerminalWindow } from "@phosphor-icons/react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { View } from "../lib/store";
 import { Api, type ModelInfo, type Settings, type SystemInfo } from "../lib/api";
-import { useLive } from "../lib/live";
+import { useConnected, useLive } from "../lib/live";
 import { attempt } from "../lib/store";
-import { Badge, Button, Progress, cx, spring } from "../ui/kit";
+import { Badge, Button, Progress, Spinner, cx, spring } from "../ui/kit";
+import { tauri, useBackendStatus } from "../ui/BackendBanner";
 import { AiConnect } from "./app-ai";
-import { CheckRow, fmtBytes, inTauri } from "./app-common";
+import { CheckRow, CopyBlock, fmtBytes, inTauri } from "./app-common";
 import { NewProjectChoices, createFromDraft, draftError, emptyDraft, type ProjectDraft } from "./NewProject";
 
 const STEPS = ["welcome", "mac", "model", "ai", "project"] as const;
@@ -292,23 +293,74 @@ function Welcome() {
   );
 }
 
+/** Desktop app: uv (the backend runs on it) and the backend itself, from the shell's point of view. */
+function BackendChecks() {
+  const connected = useConnected();
+  const b = useBackendStatus(inTauri());
+  if (!b) return null;
+  return (
+    <>
+      <CheckRow
+        tone={b.uv ? "ok" : "err"}
+        icon={<TerminalWindow size={18} />}
+        label={b.uv ? "uv found" : "uv not found"}
+        detail={
+          b.uv ? (
+            "Runs the studio's Python backend."
+          ) : (
+            <span className="flex flex-col gap-1.5">
+              The studio's backend runs on uv. Install it in Terminal, then restart the backend:
+              <CopyBlock text={b.uv_install} />
+              <span>
+                <Button size="sm" variant="ghost" onClick={() => void tauri("restart_backend").catch(() => {})}>
+                  Restart the backend
+                </Button>
+              </span>
+            </span>
+          )
+        }
+      />
+      {b.uv && !connected && (
+        <CheckRow
+          tone={b.error ? "err" : "neutral"}
+          icon={b.error ? <WarningCircle size={18} /> : <Spinner className="size-[18px]" />}
+          label={b.error ? "The backend didn't start" : b.first_run ? "Installing the studio's Python packages" : "Starting the backend"}
+          detail={
+            b.error ? (
+              <span className="selectable">{b.error}</span>
+            ) : b.first_run ? (
+              "First launch only: this takes a minute or two. The checks below appear when it's ready."
+            ) : (
+              "A few seconds."
+            )
+          }
+        />
+      )}
+    </>
+  );
+}
+
 function ThisMac() {
   const sys = useLive<SystemInfo>(() => Api.system(), []);
   const s = sys.data;
   return (
     <StepFrame title="This Mac" body="Qwen-Image runs on Apple Silicon through MLX. Here is how this machine measures up.">
       {!s ? (
-        sys.error ? (
-          <p className="text-[13px] text-err">{sys.error.message}</p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {[0, 1, 2, 3].map((n) => (
-              <div key={n} className="skeleton h-11" />
-            ))}
-          </div>
-        )
+        <div className="flex flex-col gap-3">
+          {inTauri() && (
+            <div className="flex flex-col divide-y divide-line border-y border-line">
+              <BackendChecks />
+            </div>
+          )}
+          {sys.error && !inTauri() ? (
+            <p className="text-[13px] text-err">{sys.error.message}</p>
+          ) : (
+            [0, 1, 2].map((n) => <div key={n} className="skeleton h-11" />)
+          )}
+        </div>
       ) : (
         <div className="flex flex-col divide-y divide-line border-y border-line">
+          <BackendChecks />
           <CheckRow
             tone={s.apple_silicon ? "ok" : "err"}
             icon={<Cpu size={18} />}

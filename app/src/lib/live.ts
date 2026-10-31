@@ -103,6 +103,14 @@ export function useLive<T>(fn: (() => Promise<T>) | null, deps: unknown[] = []) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [r, reload, ...deps]);
 
+  // A fetch that failed because the backend wasn't up yet (the app's first launch can take minutes)
+  // is retried when the event stream connects; the revision alone may not move.
+  const online = useConnected();
+  const failed = error !== null;
+  useEffect(() => {
+    if (online && failed) void reload();
+  }, [online, failed, reload]);
+
   return { data, error, loading: loading && data === undefined, reload, setData };
 }
 
