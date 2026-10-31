@@ -165,7 +165,7 @@ export function Segmented<T extends string>({
             title={o.title}
             onClick={() => onChange(o.value)}
             className={cx(
-              "relative flex items-center gap-1.5 rounded-[6px] font-medium transition-colors duration-150",
+              "relative flex items-center gap-1.5 rounded-[6px] font-medium whitespace-nowrap transition-colors duration-150",
               size === "sm" ? "h-6 px-2 text-[12px]" : "h-7 px-2.5 text-[12.5px]",
               on ? "text-ink" : "text-ink-2 hover:text-ink",
             )}

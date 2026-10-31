@@ -10,6 +10,7 @@ import {
   Export,
   Hand,
   Layout,
+  MagicWand,
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
   SidebarSimple,
@@ -17,7 +18,8 @@ import {
   TextT,
   UsersThree,
 } from "@phosphor-icons/react";
-import { Button, IconButton, Kbd, cx, spring } from "../../ui/kit";
+import { Button, IconButton, Kbd, Segmented, cx, spring } from "../../ui/kit";
+import { useApp } from "../../lib/store";
 import type { LayerToggles } from "../../ui/PanelView";
 import { TEMPLATES, type TemplateId } from "../../lib/layout";
 import { useStudio, type Tool } from "./studioState";
@@ -52,18 +54,46 @@ const LAYERS: { k: keyof LayerToggles; label: string }[] = [
   { k: "lettering", label: "Lettering" },
 ];
 
+type StudioMode = "letter" | "layout" | "edit";
+
+/** One obvious switch for what the canvas is doing: lettering, page layout, or editing the picture itself. */
+export function ModeSwitch({ pageMode, canEdit }: { pageMode: boolean; canEdit: boolean }) {
+  const { layoutMode, editImage, setLayoutMode, setEditImage } = useStudio();
+  const mode: StudioMode = editImage ? "edit" : layoutMode ? "layout" : "letter";
+  const set = (m: StudioMode) => {
+    if (m === "edit" && !canEdit) {
+      useApp.getState().toast("Select a panel that has a picture to edit it", "info");
+      return;
+    }
+    if (m === "edit") setEditImage(true);
+    else if (m === "layout") setLayoutMode(true);
+    else {
+      setEditImage(false);
+      setLayoutMode(false);
+    }
+  };
+  const opts: { value: StudioMode; label: React.ReactNode; title: string }[] = [
+    { value: "letter", label: <><ChatCircle size={14} />Letter</>, title: "Bubbles and sound effects" },
+    ...(pageMode ? [{ value: "layout" as const, label: <><Layout size={14} />Layout</>, title: "Page slots, gutters and framing" }] : []),
+    { value: "edit", label: <><MagicWand size={14} />Edit image</>, title: "Select, move, erase and fix the picture" },
+  ];
+  return <Segmented<StudioMode> value={mode} onChange={set} options={opts} />;
+}
+
 export function CanvasToolbar({
   pageMode,
+  canEdit,
   onFit,
   onZoomBy,
   onZoomTo,
 }: {
   pageMode: boolean;
+  canEdit: boolean;
   onFit: () => void;
   onZoomBy: (f: number) => void;
   onZoomTo: (z: number) => void;
 }) {
-  const { tool, setTool, layers, toggleLayer, layoutMode, setLayoutMode } = useStudio();
+  const { tool, setTool, layers, toggleLayer, layoutMode } = useStudio();
   const z = useZoom();
   const [layersOpen, setLayersOpen] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
@@ -71,6 +101,8 @@ export function CanvasToolbar({
 
   return (
     <div className="material pointer-events-auto flex items-center gap-0.5 rounded-[var(--radius-surface)] border border-line p-1 shadow-[var(--shadow-float)]">
+      <ModeSwitch pageMode={pageMode} canEdit={canEdit} />
+      <Divider />
       {TOOLS.map((t) => (
         <IconButton key={t.id} label={`${t.label} (${t.key})`} active={tool === t.id} disabled={layoutMode && t.id !== "pan" && t.id !== "select"} onClick={() => setTool(t.id)}>
           {t.icon}
@@ -113,11 +145,6 @@ export function CanvasToolbar({
           ))}
         </Popover>
       </div>
-      {pageMode && (
-        <IconButton label="Edit page layout" active={layoutMode} onClick={() => setLayoutMode(!layoutMode)}>
-          <Layout size={16} />
-        </IconButton>
-      )}
     </div>
   );
 }
@@ -152,14 +179,15 @@ export function ActionBar({ onLetter, letterBusy, onCast, onExport, castCount }:
   const { inspector, setInspector } = useStudio();
   return (
     <div className="material pointer-events-auto flex items-center gap-0.5 rounded-[var(--radius-surface)] border border-line p-1 shadow-[var(--shadow-float)]">
-      <Button size="sm" variant="ghost" icon={<ChatText size={15} />} loading={letterBusy} onClick={onLetter} title="Place speech bubbles away from faces">
-        Auto-letter
+      <Button size="sm" variant="ghost" icon={<ChatText size={15} />} loading={letterBusy} onClick={onLetter} title="Auto-letter: place speech bubbles away from faces">
+        <span className="@max-[980px]:hidden">Auto-letter</span>
       </Button>
-      <Button size="sm" variant="ghost" icon={<UsersThree size={15} />} onClick={onCast}>
-        Cast{castCount ? <span className="num text-ink-3">{castCount}</span> : null}
+      <Button size="sm" variant="ghost" icon={<UsersThree size={15} />} onClick={onCast} title="Cast">
+        <span className="@max-[980px]:hidden">Cast</span>
+        {castCount ? <span className="num text-ink-3">{castCount}</span> : null}
       </Button>
-      <Button size="sm" variant="ghost" icon={<Export size={15} />} onClick={onExport}>
-        Export
+      <Button size="sm" variant="ghost" icon={<Export size={15} />} onClick={onExport} title="Export">
+        <span className="@max-[980px]:hidden">Export</span>
       </Button>
       <Divider />
       <IconButton label={inspector ? "Hide inspector" : "Show inspector"} active={inspector} onClick={() => setInspector(!inspector)}>
@@ -169,11 +197,11 @@ export function ActionBar({ onLetter, letterBusy, onCast, onExport, castCount }:
   );
 }
 
-function Divider() {
+export function Divider() {
   return <span className="mx-1 h-5 w-px bg-line" />;
 }
 
-function Switch({ on, onChange }: { on: boolean; onChange: () => void }) {
+export function Switch({ on, onChange }: { on: boolean; onChange: () => void }) {
   return (
     <button
       role="switch"
@@ -189,7 +217,7 @@ function Switch({ on, onChange }: { on: boolean; onChange: () => void }) {
   );
 }
 
-function Popover({ open, onClose, children, className, origin }: { open: boolean; onClose: () => void; children: React.ReactNode; className?: string; origin: string }) {
+export function Popover({ open, onClose, children, className, origin }: { open: boolean; onClose: () => void; children: React.ReactNode; className?: string; origin: string }) {
   // Escape closes it (the click-catcher below would otherwise swallow the next click on the canvas).
   useEffect(() => {
     if (!open) return;
@@ -223,7 +251,7 @@ function Popover({ open, onClose, children, className, origin }: { open: boolean
   );
 }
 
-function MenuItem({ children, onClick, hint }: { children: React.ReactNode; onClick: () => void; hint?: React.ReactNode }) {
+export function MenuItem({ children, onClick, hint }: { children: React.ReactNode; onClick: () => void; hint?: React.ReactNode }) {
   return (
     <button className="flex h-8 items-center justify-between rounded-[var(--radius-control)] px-2 text-left text-[13px] hover:bg-wash" onClick={onClick}>
       {children}

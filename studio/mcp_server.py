@@ -39,7 +39,9 @@ Consistency rules (why panels are shaped this way):
 - Exact color words ("pastel periwinkle-blue", never "blue"). Name the outfit every time.
 - No text in images: dialogue goes in `bubbles` (drawn as vectors on top), never in `action`.
 - `avoid` instead of negative prompts (turbo ignores negative prompts).
-- Small tweak on an existing image: copilot(mode="img2img", strength=0.6). Big pose change: regenerate.
+- Small tweak on an existing image: edit_image(ops=[{"op": "fix", "prompt": "...", "strength": 0.6}]) (add a
+  mask op first to change only one region). Missing body parts out of frame: {"op": "extend", "side": "down"}.
+  Rearranging, erasing, cropping or flipping: edit_image pixel ops (segment finds things). Big pose change: regenerate.
 - Picks are the user's call. Only pick_version when asked, or for reference panels (sheet, plates)
   while the user is away, and say which one you chose.
 
@@ -56,7 +58,8 @@ class StudioOffline(RuntimeError):
 
 def _api(method: str, path: str, **kw) -> Any:
     try:
-        r = httpx.request(method, URL + path, timeout=httpx.Timeout(60, connect=3), **kw)
+        kw.setdefault("timeout", httpx.Timeout(60, connect=3))
+        r = httpx.request(method, URL + path, **kw)
     except httpx.ConnectError as e:
         raise StudioOffline(f"The manga-studio backend isn't running at {URL}. Open the Manga Studio app, or start it with `uv run studio serve`.") from e
     if r.status_code >= 400:
@@ -225,6 +228,56 @@ def copilot(story: str, panel: str, mode: str = "img2img", prompt: str = "", str
     if not wait:
         return r
     return {"results": _wait_jobs(r["jobs"], 1200)}
+
+
+@server.tool()
+def segment(story: str, panel: str, point: list[float], file: str | None = None, method: str = "auto", tolerance: float = 0.12) -> dict:
+    """Find the thing at `point` ([x, y] fractions of the image) in a panel version (default: the one in use).
+    method: auto (Apple Vision foreground instances, falling back to colour flood), vision, or color.
+    Returns the selected region's bbox/area plus every instance Vision found (index, bbox, area). To use it in
+    edit_image, put the same point in a mask op: {"op": "mask", "id": "girl", "point": [x, y]}."""
+    import numpy as np
+
+    r = _api("POST", f"/api/stories/{story}/panels/{panel}/segment", json={"file": file, "point": point, "method": method, "tolerance": tolerance})
+    from PIL import Image as PILImage
+    import base64
+
+    m = np.asarray(PILImage.open(io.BytesIO(base64.b64decode(r["mask"].split(",", 1)[1])))) > 127
+    ys, xs = np.nonzero(m)
+    h, w = m.shape
+    bbox = [round(xs.min() / w, 3), round(ys.min() / h, 3), round((xs.max() + 1 - xs.min()) / w, 3), round((ys.max() + 1 - ys.min()) / h, 3)] if len(xs) else None
+    return {"file": r["file"], "method": r["method"], "instance": r["instance"], "bbox": bbox, "area": r["area"], "instances": r["instances"], "size": r["size"]}
+
+
+@server.tool()
+def edit_image(story: str, panel: str, ops: list[dict], file: str | None = None, wait: bool = True) -> dict:
+    """Edit a panel's image. The source version (default: the one in use) is never changed: the result is a NEW
+    version whose .json records `edited_from` and the ops. Coordinates are fractions of the image.
+
+    Pixel ops (instant, applied in order):
+      {"op": "mask", "id": "m1", "point": [x, y]}       select the thing under a point (also "rect": [x, y, w, h],
+                                                        "poly": [[x, y], ...]; "mode": replace|add|subtract|intersect)
+      {"op": "move", "mask": "m1", "dx": 0.1, "dy": 0, "scale": 1.0, "rotate": 0, "flip": "h"|"v"}
+                                                        lift, transform and paste; the hole is filled locally.
+                                                        Consecutive moves are one rearrangement (later = on top).
+      {"op": "erase", "mask": "m1", "fill": "local"|"model"}   remove; "model" repaints the hole with the model
+      {"op": "crop", "box": [x, y, w, h]}   {"op": "rotate", "deg": 90}   {"op": "flip", "axis": "h"|"v", "mask"?}
+      {"op": "adjust", "brightness": 1.1, "contrast": 1.0, "saturation": 0.9, "mask"?}   (multipliers, 1 = same)
+      {"op": "extend", "side": "down", "amount": 0.2, "prompt": "her legs and shoes"}   grow the canvas, then the
+                                                        model paints the new strip (outpaint)
+    Model op (last in the list; queues jobs on the shared queue, `count` candidates, default 2):
+      {"op": "fix", "prompt": "show the girl's legs", "mask": "m1"?, "strength": 0.6, "count": 2}
+          with a mask: inpaint only that region; without: img2img of the whole image
+          (strength 0.4 subtle, 0.6 medium, 0.85 redraw). The panel's blocks, cast and refs ride along.
+      {"op": "redraw", "prompt": "...", "strength": 0.85}
+    Returns the saved version (if pixels changed) and, with wait=True, the candidate files. view_image them,
+    then tell the user; picking one is the user's call (pick_version only when asked)."""
+    r = _api("POST", f"/api/stories/{story}/panels/{panel}/edit", json={"file": file, "ops": ops}, timeout=httpx.Timeout(120, connect=3))
+    out = {"saved": r["file"], "source": r["source"], "edited_from": r["edited_from"], "size": r["size"]}
+    if r["jobs"]:
+        out["results"] = _wait_jobs(r["jobs"], 1200) if wait else None
+        out["jobs"] = r["jobs"]
+    return out
 
 
 @server.tool()

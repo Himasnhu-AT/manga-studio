@@ -11,6 +11,7 @@ import { Button, Empty, spring } from "../../ui/kit";
 import { ExportSheet } from "../ExportSheet";
 import { Canvas, PAGE_BASE, type CanvasHandle } from "./Canvas";
 import { CastStudio } from "./CastStudio";
+import { ImageEditor } from "./ImageEditor";
 import { Inspector } from "./Inspector";
 import { Rail } from "./Rail";
 import { useStudio } from "./studioState";
@@ -40,7 +41,7 @@ export function Studio() {
 
 function StudioBody({ story }: { story: StoryDetail }) {
   const { panel: selectedId, page: pageIdx, setPage, selectPanel, go } = useApp();
-  const { inspector, layoutMode } = useStudio();
+  const { inspector, layoutMode, editImage, setEditImage } = useStudio();
   const canvas = useRef<CanvasHandle>(null);
   const [castOpen, setCastOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -104,6 +105,10 @@ function StudioBody({ story }: { story: StoryDetail }) {
 
   const selected = useMemo(() => story.panels.find((p) => p.id === selectedId) ?? null, [story.panels, selectedId]);
   const lettering = useLettering(story.slug, selected);
+  // leaving the panel (deleted, or nothing selected) ends an edit session
+  useEffect(() => {
+    if (editImage && !selected) setEditImage(false);
+  }, [editImage, selected, setEditImage]);
 
   // ---- keyboard ----------------------------------------------------------------------
   useEffect(() => {
@@ -111,6 +116,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
     const down = (e: KeyboardEvent) => {
       if (typing(e.target)) return;
       const st = useStudio.getState();
+      if (st.editImage) return; // the image editor owns the keyboard while it is open
       if (e.metaKey || e.ctrlKey) {
         if (e.key === "0") (e.preventDefault(), canvas.current?.fit(false));
         else if (e.key === "=" || e.key === "+") (e.preventDefault(), canvas.current?.zoomBy(1.25));
@@ -214,12 +220,12 @@ function StudioBody({ story }: { story: StoryDetail }) {
     <div className="flex h-full">
       <Rail story={story} pages={pages} previewLayout={previewLayout} onPagesChange={onPagesChange} onReveal={(pid) => canvas.current?.revealPanel(pid)} />
 
-      <div className="relative min-w-0 flex-1">
+      <div className="@container relative min-w-0 flex-1">
         <Canvas ref={canvas} story={story} pages={pages} pageIdx={pageIdx} onPagesChange={onPagesChange} lettering={lettering} onZoom={setZoomLabel} />
 
         <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-3">
           <div className="relative">
-            <CanvasToolbar pageMode={mode === "page"} onFit={() => canvas.current?.fit()} onZoomBy={(f) => canvas.current?.zoomBy(f)} onZoomTo={(z) => canvas.current?.zoomTo(z)} />
+            <CanvasToolbar pageMode={mode === "page"} canEdit={!!selected?.pick} onFit={() => canvas.current?.fit()} onZoomBy={(f) => canvas.current?.zoomBy(f)} onZoomTo={(z) => canvas.current?.zoomTo(z)} />
             {/* own row, out of flow, so it never squeezes the action bar */}
             <div className="absolute top-full left-0 mt-2 w-max">
               <AnimatePresence>{layoutMode && mode === "page" && <TemplateBar onApply={applyTpl} />}</AnimatePresence>
@@ -229,6 +235,14 @@ function StudioBody({ story }: { story: StoryDetail }) {
         </div>
 
         {mode === "page" && pages.length > 1 && <PageNav n={pages.length} i={pageIdx} onGo={setPage} />}
+
+        <AnimatePresence>
+          {editImage && selected && (
+            <motion.div key="image-editor" className="absolute inset-0 z-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+              <ImageEditor story={story} panel={selected} pageMode={mode === "page"} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <AnimatePresence initial={false}>

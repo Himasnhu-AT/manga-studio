@@ -237,11 +237,22 @@ def versions(story: Story, pid: str) -> list[dict]:
     return out
 
 
+_reserved: set[Path] = set()  # names handed out but not written yet (a generation in progress)
+_reserve_lock = threading.Lock()
+
+
 def next_version_name(story: Story, pid: str, seed: int) -> Path:
+    """Next free NNN-s<seed>.png. Reserved until written, so a job that is still generating and an image
+    edit saved meanwhile never get the same number."""
     d = story.dir / "out" / pid
     d.mkdir(parents=True, exist_ok=True)
-    n = 1 + max((int(p.name.split("-")[0]) for p in d.glob("*.png") if p.name[:3].isdigit()), default=0)
-    return d / f"{n:03d}-s{seed}.png"
+    with _reserve_lock:
+        taken = [p.name for p in d.glob("*.png")] + [p.name for p in _reserved if p.parent == d]
+        n = 1 + max((int(name.split("-")[0]) for name in taken if name[:3].isdigit()), default=0)
+        out = d / f"{n:03d}-s{seed}.png"
+        _reserved.difference_update({p for p in _reserved if p.exists()})
+        _reserved.add(out)
+        return out
 
 
 def state_path(story: Story) -> Path:

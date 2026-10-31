@@ -182,6 +182,18 @@ html.setup-window body {
   }
 }
 
+/* Image editor: a click on the picture pings while the selection is being found. */
+@keyframes seg-ping {
+  from {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1.6);
+    opacity: 0;
+  }
+}
+
 /* Thin scrollbars that stay out of the way. */
 * {
   scrollbar-width: thin;

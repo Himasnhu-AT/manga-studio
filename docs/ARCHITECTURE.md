@@ -21,7 +21,8 @@ the existing SSE stream `/api/events` (an integer revision; refetch when it move
 ```
 stories/<slug>/story.yaml            everything the user/agent authors (below)
 stories/<slug>/refs/                 reference images (uploads, cast refs)
-stories/<slug>/out/<pid>/NNN-sSEED.png + .json   generated versions (unchanged from v0.1)
+stories/<slug>/out/<pid>/NNN-sSEED.png + .json   generated and edited versions (an edit's .json has edited_from + ops)
+stories/<slug>/out/<pid>/masks/      mask PNGs referenced by recorded edit ops (not versions)
 stories/<slug>/state.json            picks, stars, notes (unchanged)
 stories/<slug>/source.md             pipeline source text (Mode B)
 stories/<slug>/pipeline/             stage outputs: analysis.json, script.json, qa.json, state.json
@@ -149,6 +150,8 @@ v0.1: `GET /api/status`, `GET /api/stories`, `GET /api/stories/{slug}`, `POST /a
 | DELETE | /api/stories/{slug}/cast/{cid} | | `{ok}` |
 | POST | /api/stories/{slug}/refs | multipart `file` | `{name}` |
 | POST | /api/stories/{slug}/panels/{pid}/copilot | `{mode: txt2img\|img2img\|inpaint, prompt?, source?, mask?, strength?, count?}` | `{jobs, seeds}` |
+| POST | /api/stories/{slug}/panels/{pid}/segment | `{point: [x, y], file?, method?: auto\|vision\|color, tolerance?: 0.12, ops?}` | `{file, mask (PNG data URL), method, instance, instances: [{index, bbox, area}], area, size, vision}` |
+| POST | /api/stories/{slug}/panels/{pid}/edit | `{ops: [...], file?, preview?: false}` | `{file (new version or null), source, edited_from, jobs, seeds, size}`; preview: `{image, size, holes}` |
 | POST | /api/stories/{slug}/letter | `{panels?: [pid], overwrite?: false}` | `{placed: {pid: n}}` |
 | POST | /api/stories/{slug}/export | `{formats: [png, svg, pdf], preset: digital\|print-b5\|print-a5, bleed_mm?, margin_mm?}` | `{files: [rel paths]}` |
 
@@ -156,6 +159,39 @@ Copilot: `txt2img` = normal generation with cast refs injected. `img2img` = the 
 version (or `source`) placed first in refs at `strength` (default 0.6). `inpaint` = img2img, then
 only the masked region (PNG data URL, white = change) is blended back over the source; output
 saved as a new version.
+
+### Image editing (`studio/imageedit.py`, `studio/segment.py`)
+
+Edits are non-destructive. `edit` applies `ops` to a version (`file`, default the one in use) and saves
+the result as a NEW version in `out/<pid>/` whose `.json` has `edited_from` and the recorded ops (inline
+PNG masks are saved to `out/<pid>/masks/` and referenced as `{"png": "masks/..."}`, so the list replays
+exactly). The app previews with `preview: true` and sends the same ops on Apply; agents send them through
+MCP `edit_image`. Pixel work is PIL + numpy (+ OpenCV Telea inpaint, already a dependency of mflux) in
+the backend, so the result is the same whoever applied it. Coordinates are fractions of the image as it
+is when the op runs.
+
+| op | fields | |
+|---|---|---|
+| `mask` | `id`, one of `png` (data URL or `masks/` file), `point` (segment), `rect` [x,y,w,h], `poly`; `mode` replace\|add\|subtract\|intersect; `grow` px | named masks follow later crop/rotate/flip |
+| `move` | `mask`, `dx`, `dy`, `scale`, `rotate` (deg, clockwise), `flip` h\|v, `fill` local\|none\|model | consecutive moves are one rearrangement: all lifted from the same image, holes filled once, pasted in list order (later = on top) |
+| `erase` | `mask`, `fill` local\|model\|white | `model` also repaints the hole with an inpaint job |
+| `crop` | `box` [x,y,w,h] | |
+| `rotate` | `deg` (multiple of 90, clockwise) | |
+| `flip` | `axis` h\|v, `mask`? | with a mask: flips the selection in place |
+| `adjust` | `brightness`, `contrast`, `saturation` (multipliers, 1 = same), `mask`? | |
+| `extend` | `side` up\|down\|left\|right, `amount` (0.2 = 20%), `prompt`?, `count`? | pads (size rounded to 16), then inpaints the new strip |
+| `fix` | `prompt`, `mask`?, `strength` (0.4 subtle, 0.6 medium, 0.85 redraw), `count` (2), `grow` | last op only. With a mask: inpaint that region (grown ~1.5%); without: img2img of the whole image |
+| `redraw` | `prompt`?, `strength` (0.85) | whole-image img2img |
+
+Model work goes through the shared worker queue (`queue_from_source`, also used by copilot): the
+edited image is image 1, the panel's blocks, cast and refs ride along, the render size follows the
+source's aspect, and each candidate lands as a new version whose `.json` records `edited_from`, `op`,
+`fix` (the prompt), `strength` and `mask` (bbox + area). Picking a candidate is a normal pick.
+
+Segment: Apple Vision `VNGenerateForegroundInstanceMaskRequest` (macOS 14+, pyobjc, no download, ~0.2 s,
+label map cached per image); the instance under the click is returned. Off macOS, on error, or on
+background, it falls back to a colour flood fill (`tolerance` 0..1). The app composes results into its
+selection with shift (add) and alt (subtract) and refines with lasso and brush.
 
 ### App: system, settings, models, integrations
 | Method | Path | Returns |
@@ -209,9 +245,9 @@ regenerate up to 3 times, then are `flagged` for a manual fix in Studio.
 
 stdio server built on mcp 2.3's `MCPServer` (FastMCP no longer exists there) that proxies to the HTTP
 API at `STUDIO_URL` (default http://127.0.0.1:7860). The workflow and consistency rules ship in the
-server instructions. 24 tools: `list_projects`, `get_project`, `create_project`, `update_story`,
+server instructions. 26 tools: `list_projects`, `get_project`, `create_project`, `update_story`,
 `update_panel`, `add_panel`, `set_cast`, `prompt_preview`, `generate` (waits by default),
-`copilot`, `view_image` (returns the picture, max 1024 px JPEG, so the agent can look), `jobs`,
+`copilot`, `segment`, `edit_image` (same op JSON as `/edit`; waits for fix/extend candidates), `view_image` (returns the picture, max 1024 px JPEG, so the agent can look), `jobs`,
 `get_feedback`, `resolve_note`, `pick_version`, `auto_letter`, `export`, `pipeline_new`,
 `pipeline_status`, `pipeline_run`, `pipeline_task`, `pipeline_submit`. When the backend isn't
 running, tools fail with a message telling the agent to open the app or run `uv run studio serve`.

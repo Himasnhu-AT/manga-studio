@@ -52,7 +52,7 @@ When `manga-studio` MCP tools are available (registered with
 `claude mcp add --scope user manga-studio -- manga-studio-mcp`; the app's Connect button does it), prefer them: they go through
 the same running backend the app uses, and `view_image` hands you the picture directly. Tools:
 `list_projects`, `get_project`, `create_project`, `update_story`, `update_panel`, `add_panel`,
-`set_cast`, `prompt_preview`, `generate`, `copilot`, `view_image`, `jobs`, `get_feedback`,
+`set_cast`, `prompt_preview`, `generate`, `copilot`, `segment`, `edit_image`, `view_image`, `jobs`, `get_feedback`,
 `resolve_note`, `pick_version`, `auto_letter`, `export`, `pipeline_new`, `pipeline_status`,
 `pipeline_run`, `pipeline_task`, `pipeline_submit`.
 
@@ -108,6 +108,11 @@ With the `agent` provider a stage parks as `awaiting_agent`. Then:
   nothing, so it's appended to the prompt as "Avoid: ...".
 - **Prompt refers to refs by position**: the prompt starts "Image 1: <label>. Image 2: <label>."
   generated from each ref's `label`/`ref_label`. Mention "image 1"/"image 2" in actions when useful.
+- Fix part of an image ("show her legs", "fix the left hand"): `edit_image` with
+  `[{op: mask, id: m, point: [x, y]}, {op: fix, prompt, mask: m}]` (inpaint) or just `{op: fix, prompt}`
+  (img2img, strength 0.4/0.6/0.85). Out of frame: `{op: extend, side: down, amount: 0.2, prompt}`.
+  Rearrange/erase/crop/flip/adjust are pixel ops on the same call; every edit is a new version with
+  `edited_from` in its .json. In the app: Edit image mode (`/` or Cmd+K for the command bar).
 - Small tweak on an existing image (expression, a prop): put that image first in `refs` and set
   `strength: 0.6` (the first ref is the source; lower = closer to it), or `copilot` img2img.
   Big pose changes → 1.0.
