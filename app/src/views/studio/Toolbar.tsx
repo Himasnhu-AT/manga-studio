@@ -2,7 +2,7 @@
 // keyboard); only the layers popover animates, scaling from its trigger.
 
 import { AnimatePresence, motion } from "motion/react";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   ChatCircle,
   ChatText,
@@ -190,6 +190,18 @@ function Switch({ on, onChange }: { on: boolean; onChange: () => void }) {
 }
 
 function Popover({ open, onClose, children, className, origin }: { open: boolean; onClose: () => void; children: React.ReactNode; className?: string; origin: string }) {
+  // Escape closes it (the click-catcher below would otherwise swallow the next click on the canvas).
+  useEffect(() => {
+    if (!open) return;
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", k, true);
+    return () => window.removeEventListener("keydown", k, true);
+  }, [open, onClose]);
   return (
     <AnimatePresence>
       {open && (

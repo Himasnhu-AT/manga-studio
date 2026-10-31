@@ -13,7 +13,16 @@ import {
   type ReactNode,
   type TextareaHTMLAttributes,
 } from "react";
+import { createPortal } from "react-dom";
 import { useApp } from "../lib/store";
+
+/**
+ * Render overlays at the document root. A transformed ancestor (e.g. a panel that slid in with
+ * `transform`) becomes the containing block for `position: fixed`, which would trap a modal inside it.
+ */
+export function Portal({ children }: { children: ReactNode }) {
+  return createPortal(children, document.body);
+}
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -201,39 +210,41 @@ export function Sheet({
     return () => window.removeEventListener("keydown", k);
   }, [open, onClose]);
   return (
-    <AnimatePresence>
-      {open && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
-          <motion.div
-            className="absolute inset-0 bg-[rgb(23_23_26/0.28)]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={onClose}
-          />
-          <motion.div
-            role="dialog"
-            aria-modal
-            className="relative flex max-h-full w-full flex-col overflow-hidden rounded-[var(--radius-surface)] bg-paper shadow-[var(--shadow-sheet)]"
-            style={{ maxWidth: width }}
-            initial={reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(8px) scale(0.97)" }}
-            animate={reduce ? { opacity: 1 } : { opacity: 1, transform: "translateY(0px) scale(1)" }}
-            exit={reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(8px) scale(0.97)" }}
-            transition={reduce ? { duration: 0.15 } : spring}
-          >
-            <div className="flex items-center justify-between gap-4 px-5 pt-4 pb-3">
-              <h2 className="type-title">{title}</h2>
-              <IconButton label="Close" size="sm" onClick={onClose}>
-                <X size={15} />
-              </IconButton>
-            </div>
-            <div className="min-h-0 overflow-y-auto px-5 pb-5">{children}</div>
-            {footer && <div className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>}
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
+    <Portal>
+      <AnimatePresence>
+        {open && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
+            <motion.div
+              className="absolute inset-0 bg-[rgb(23_23_26/0.28)]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={onClose}
+            />
+            <motion.div
+              role="dialog"
+              aria-modal
+              className="relative flex max-h-full w-full flex-col overflow-hidden rounded-[var(--radius-surface)] bg-paper shadow-[var(--shadow-sheet)]"
+              style={{ maxWidth: width }}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(8px) scale(0.97)" }}
+              animate={reduce ? { opacity: 1 } : { opacity: 1, transform: "translateY(0px) scale(1)" }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(8px) scale(0.97)" }}
+              transition={reduce ? { duration: 0.15 } : spring}
+            >
+              <div className="flex items-center justify-between gap-4 px-5 pt-4 pb-3">
+                <h2 className="type-title">{title}</h2>
+                <IconButton label="Close" size="sm" onClick={onClose}>
+                  <X size={15} />
+                </IconButton>
+              </div>
+              <div className="min-h-0 overflow-y-auto px-5 pb-5">{children}</div>
+              {footer && <div className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </Portal>
   );
 }
 

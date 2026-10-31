@@ -18,7 +18,8 @@ export function EngineStatus() {
 
   let label = "Offline";
   if (s) {
-    if (running) label = running.steps ? `Drawing ${running.panel} ${running.step ?? 0}/${running.steps}` : `Loading model`;
+    // Before the first step arrives a job is either waiting on the model load or just starting.
+    if (running) label = running.steps ? `Drawing ${running.panel} ${running.step ?? 0}/${running.steps}` : s.loaded ? `Drawing ${running.panel}` : "Loading model";
     else if (s.loading) label = "Loading model";
     else if (s.engine === "mock") label = "Mock engine";
     else label = s.loaded ? "Model ready" : "Model idle";

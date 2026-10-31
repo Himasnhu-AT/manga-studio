@@ -353,6 +353,8 @@ _EYES = ["dark brown eyes", "amber eyes", "grey-green eyes", "hazel eyes", "pale
 
 _SENT = re.compile(r"[^.!?\n]+(?:[.!?]+[\"'”’)]*|$)")
 _QUOTE = re.compile(r"[\"“]([^\"”]{1,300})[\"”]")
+# "he asked." left behind once the quote is lifted into a bubble: not something to draw.
+_TAG = re.compile(r"\b(?:he|she|they|i|we)\s+(?:said|asked|replied|whispered|shouted|yelled|called|added|muttered|cried|answered)\b[.,!?]?", re.I)
 _PLACES = (
     "kitchen bakery cafe café shop store market street alley road bridge station platform train bus car classroom "
     "school hallway corridor rooftop roof office room bedroom bathroom living-room garden park forest woods beach "
@@ -384,7 +386,12 @@ def sentences(text: str, start: int, end: int) -> list[tuple[int, int]]:
         while e > s and text[e - 1].isspace():
             e -= 1
         if e > s:
-            out.append((s, e))
+            # A dialogue tag after a quote ('"Can we try?" he asked.') starts lowercase: keep it with
+            # the quote, or the panel split lands mid-sentence and the line loses its speaker.
+            if out and text[s].islower():
+                out[-1] = (out[-1][0], e)
+            else:
+                out.append((s, e))
     return out
 
 
@@ -466,7 +473,7 @@ class HeuristicProvider:
                                 best, speaker = d, c["id"]
                     kind = "shout" if line.endswith("!") or line.isupper() else "speech"
                     dialogue.append({"speaker": speaker, "text": line, "kind": kind})
-                action = _QUOTE.sub("", text)
+                action = _TAG.sub("", _QUOTE.sub("", text))
                 action = re.sub(r"\s+", " ", action).strip(" ,.")
                 camera = cameras[len(panels) % 3] if ci else ("wide establishing shot" if not panels else cameras[len(panels) % 3])
                 panels.append(

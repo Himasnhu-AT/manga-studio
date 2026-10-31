@@ -155,6 +155,13 @@ export function Thumb({ src, alt, className }: { src: string | null; alt: string
   );
 }
 
+/** Same text studio/story.py `compile_cast` produces: empty fields are left out, not printed blank. */
 export function compileCast(c: { name?: string; role?: string; face?: string; hair?: string; outfit?: string; palette?: string }) {
-  return `${c.name ?? ""}, ${c.role ?? ""}: ${c.face ?? ""}. Hair: ${c.hair ?? ""}. Outfit: ${c.outfit ?? ""}. Palette: ${c.palette ?? ""}.`;
+  let head = c.name ?? "";
+  if (c.role) head += `, ${c.role}`;
+  const parts = [head + (c.face ? `: ${c.face}.` : ".")];
+  if (c.hair) parts.push(`Hair: ${c.hair}.`);
+  if (c.outfit) parts.push(`Outfit: ${c.outfit}.`);
+  if (c.palette) parts.push(`Palette: ${c.palette}.`);
+  return parts.join(" ");
 }

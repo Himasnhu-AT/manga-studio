@@ -184,7 +184,7 @@ def stories():
                 {
                     "slug": slug,
                     "title": s.data.get("title", slug),
-                    "panels": len(s.panels),
+                    "panels": sum(p.get("strip", True) is not False for p in s.panels),  # story panels, not ref sheets
                     "cover": cover,
                     "mode": s.format["mode"],
                     "updated": _mtime(s.dir / "story.yaml"),
