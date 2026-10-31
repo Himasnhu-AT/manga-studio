@@ -3,6 +3,7 @@
 import { Check, Copy } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Api } from "../lib/api";
+import { useConnected } from "../lib/live";
 import { cx } from "../ui/kit";
 
 export function CopyBlock({ text, className }: { text: string; className?: string }) {
@@ -132,6 +133,12 @@ export function useOnce<T>(fn: () => Promise<T>) {
   useEffect(() => {
     void reload();
   }, [reload]);
+  // Asked before the backend was up (first launch installs packages for minutes): ask again once it is.
+  const online = useConnected();
+  useEffect(() => {
+    if (online && error) void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online]);
   return { data, error, reload };
 }
 

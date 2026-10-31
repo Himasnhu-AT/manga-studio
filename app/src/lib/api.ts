@@ -268,7 +268,8 @@ export interface Integrations {
   claude: { installed: boolean; connected: boolean };
   codex: { installed: boolean; connected: boolean };
   ollama: { installed: boolean; running: boolean; models: string[] };
-  mcp: { command: string[]; json: unknown };
+  /** `add`: the exact, shell-quoted `claude mcp add` / `codex mcp add` the Connect button runs. */
+  mcp: { command: string[]; env?: Record<string, string>; add?: { claude: string; codex: string }; json: unknown };
 }
 
 export interface Coverage {

@@ -20,8 +20,23 @@ from pathlib import Path
 
 import yaml
 
+# ROOT holds the code and read-only assets (templates/, fonts/, dashboard/, the sample story). In a
+# checkout it is the repo; in the installed desktop app it is <App>.app/Contents/Resources/backend,
+# which is code-signed and must never be written to. Everything the studio writes goes to STORIES
+# (story folders) or HOME_DIR (settings and other app state); both can be pointed elsewhere by env.
 ROOT = Path(__file__).resolve().parent.parent
 STORIES = Path(os.environ.get("STUDIO_STORIES", ROOT / "stories")).resolve()
+HOME_DIR = Path(os.environ.get("STUDIO_HOME", ROOT / ".studio")).resolve()
+# The sample story ("sample" template): the user's copy if they still have one, else the pristine one
+# shipped next to the code.
+SAMPLE = "cheek-squish"
+
+
+def sample_dir() -> Path:
+    for d in (STORIES / SAMPLE, ROOT / "stories" / SAMPLE):
+        if (d / "story.yaml").exists():
+            return d
+    return STORIES / SAMPLE
 
 _state_lock = threading.Lock()
 

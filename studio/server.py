@@ -9,6 +9,7 @@ import asyncio
 import base64
 import io
 import itertools
+import os
 import re
 import shutil
 import json
@@ -27,8 +28,8 @@ from pydantic import BaseModel
 from studio import appsvc, compose, export as exporter, lettering, project as pj, story as st
 from studio.engine import make_engine
 
-DASHBOARD = Path(__file__).resolve().parent.parent / "dashboard" / "index.html"
-APP_DIST = Path(__file__).resolve().parent.parent / "app" / "dist"
+DASHBOARD = st.ROOT / "dashboard" / "index.html"
+APP_DIST = Path(os.environ.get("STUDIO_APP_DIST", st.ROOT / "app" / "dist"))
 
 app = FastAPI(title="manga-studio")
 # The Tauri webview (tauri://localhost) and the Vite dev server call the API cross-origin.
@@ -493,10 +494,10 @@ def create_project(title: str, mode: str = "page", direction: str = "rtl", templ
         raise st.StoryError(f"{slug!r} already exists")
     (d / "refs").mkdir(parents=True)
     if template == "sample":
-        src = st.STORIES / "cheek-squish"
+        src = st.sample_dir()
         if not (src / "story.yaml").exists():
             shutil.rmtree(d)
-            raise st.StoryError("the sample story (stories/cheek-squish) is missing")
+            raise st.StoryError(f"the sample story ({st.SAMPLE}) is missing")
         (d / "story.yaml").write_text((src / "story.yaml").read_text())
         for f in (src / "refs").glob("*"):
             if f.suffix.lower() in IMAGE_EXT:

@@ -12,8 +12,10 @@ type Agent = Settings["agent"];
 const providerFor: Record<Agent, Settings["llm"]["provider"]> = { claude: "agent", codex: "agent", ollama: "ollama", none: "heuristic" };
 
 // Exactly what POST /api/integrations/<cli>/connect runs (appsvc.connect), so copying it by hand
-// gives the same registration as the Connect button.
+// gives the same registration as the Connect button. The installed app registers a launcher script
+// plus -e/--env for its data folders; the backend builds that string (shell-quoted).
 export const mcpCommand = (cli: "claude" | "codex", i?: Integrations) =>
+  i?.mcp.add?.[cli] ??
   `${cli} mcp add ${cli === "claude" ? "--scope user " : ""}manga-studio -- ${(i?.mcp.command ?? ["uv", "--directory", "<repo>", "run", "studio", "mcp"]).join(" ")}`;
 
 export function AiConnect({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
