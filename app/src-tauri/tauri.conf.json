@@ -36,6 +36,17 @@
       "dmg"
     ],
     "category": "GraphicsAndDesign",
+    "resources": {
+      "../../pyproject.toml": "backend/pyproject.toml",
+      "../../uv.lock": "backend/uv.lock",
+      "../../studio/*.py": "backend/studio/",
+      "../../studio/pipeline/*.py": "backend/studio/pipeline/",
+      "../../templates/*": "backend/templates/",
+      "../../dashboard/*": "backend/dashboard/",
+      "../../fonts/*": "backend/fonts/",
+      "../../stories/cheek-squish/story.yaml": "backend/stories/cheek-squish/story.yaml",
+      "../../stories/cheek-squish/refs/*": "backend/stories/cheek-squish/refs/"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

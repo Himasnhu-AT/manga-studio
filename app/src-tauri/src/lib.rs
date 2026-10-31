@@ -4,11 +4,22 @@
 //! This shell makes it feel like one app: on launch it reuses a backend that is already running
 //! (an agent or a terminal may have started one) or spawns its own, and on quit it stops only the
 //! backend it spawned. The UI talks to the backend over HTTP on 127.0.0.1:7860.
+//!
+//! Two layouts (see `Layout::detect`):
+//! - **Dev**: running from a checkout (debug build, MANGA_STUDIO_ROOT set, or a release binary that
+//!   isn't inside a .app while the checkout it was built from exists). `uv run studio serve` in the
+//!   repo; state in <repo>/.studio, stories in <repo>/stories. Unchanged from before.
+//! - **Installed**: a downloaded .app. The backend ships as resources in Contents/Resources/backend
+//!   (code-signed: never written to). It runs as `uv run --frozen --project <that dir> studio serve`
+//!   with env that sends every write to the user's folders: venv, settings, log and bytecode under
+//!   ~/Library/Application Support/Manga Studio, stories in ~/Manga Studio/stories (seeded with the
+//!   sample story on first launch).
 
 use std::fs::{self, File};
 use std::net::{SocketAddr, TcpStream};
-use std::path::{Path, PathBuf};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -17,14 +28,182 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 const PORT: u16 = 7860;
+const SAMPLE: &str = "cheek-squish";
+const UV_INSTALL: &str = "curl -LsSf https://astral.sh/uv/install.sh | sh";
 
-/// Repo root: MANGA_STUDIO_ROOT if set, else the checkout this binary was built from.
-fn repo_root() -> PathBuf {
-    if let Ok(p) = std::env::var("MANGA_STUDIO_ROOT") {
-        return PathBuf::from(p);
-    }
+fn home() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").unwrap_or_default())
+}
+
+/// The checkout this binary was built from (<repo>/app/src-tauri/../..).
+fn manifest_repo() -> PathBuf {
     let here = Path::new(env!("CARGO_MANIFEST_DIR")); // <repo>/app/src-tauri
     here.parent().and_then(Path::parent).map(Path::to_path_buf).unwrap_or_else(|| here.to_path_buf())
+}
+
+/// True when this binary is <Something>.app/Contents/MacOS/<binary>.
+fn in_app_bundle() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.canonicalize().ok())
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .map(|d| {
+            d.ends_with("Contents/MacOS")
+                && d.parent().and_then(Path::parent).is_some_and(|a| a.extension().is_some_and(|e| e == "app"))
+        })
+        .unwrap_or(false)
+}
+
+/// Where the backend's code lives and where everything it writes goes.
+struct Layout {
+    installed: bool,
+    /// The uv project: the repo (dev) or Contents/Resources/backend (installed, read-only).
+    root: PathBuf,
+    /// App state: <repo>/.studio (dev) or ~/Library/Application Support/Manga Studio (installed).
+    data: PathBuf,
+    /// The settings file the backend reads (STUDIO_SETTINGS wins in both modes).
+    settings: PathBuf,
+    log: PathBuf,
+    /// Installed only; dev leaves these to the backend's defaults.
+    stories: Option<PathBuf>,
+    venv: Option<PathBuf>,
+    launcher: Option<PathBuf>,
+}
+
+fn env_path(k: &str) -> Option<PathBuf> {
+    std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from)
+}
+
+impl Layout {
+    fn detect(app: &AppHandle) -> Layout {
+        let dev_root = if let Some(p) = env_path("MANGA_STUDIO_ROOT") {
+            Some(p)
+        } else if cfg!(debug_assertions) || (!in_app_bundle() && manifest_repo().join("pyproject.toml").is_file()) {
+            Some(manifest_repo())
+        } else {
+            None
+        };
+        match dev_root {
+            Some(root) => {
+                let data = root.join(".studio");
+                Layout {
+                    installed: false,
+                    settings: env_path("STUDIO_SETTINGS").unwrap_or_else(|| data.join("settings.json")),
+                    log: data.join("backend.log"),
+                    root,
+                    data,
+                    stories: None,
+                    venv: None,
+                    launcher: None,
+                }
+            }
+            None => {
+                let res = app.path().resource_dir().unwrap_or_else(|_| PathBuf::from("."));
+                let data = home().join("Library/Application Support/Manga Studio");
+                Layout {
+                    installed: true,
+                    root: res.join("backend"),
+                    settings: env_path("STUDIO_SETTINGS").unwrap_or_else(|| data.join("settings.json")),
+                    log: data.join("backend.log"),
+                    stories: Some(env_path("STUDIO_STORIES").unwrap_or_else(|| home().join("Manga Studio").join("stories"))),
+                    venv: Some(env_path("UV_PROJECT_ENVIRONMENT").unwrap_or_else(|| data.join("venv"))),
+                    launcher: Some(data.join("bin").join("manga-studio-mcp")),
+                    data,
+                }
+            }
+        }
+    }
+
+    /// Env for the backend and the MCP launcher in installed mode, so nothing is written into the bundle.
+    fn backend_env(&self) -> Vec<(&'static str, PathBuf)> {
+        let (Some(stories), Some(venv), Some(launcher)) = (&self.stories, &self.venv, &self.launcher) else {
+            return vec![];
+        };
+        vec![
+            ("UV_PROJECT_ENVIRONMENT", venv.clone()),
+            ("STUDIO_STORIES", stories.clone()),
+            ("STUDIO_HOME", self.data.clone()),
+            ("STUDIO_SETTINGS", self.settings.clone()),
+            ("PYTHONPYCACHEPREFIX", self.data.join("pycache")),
+            ("STUDIO_MCP_LAUNCHER", launcher.clone()),
+        ]
+    }
+
+    /// True until the installed app's venv exists: the first `uv run` installs every dependency.
+    fn first_run(&self) -> bool {
+        self.venv.as_ref().is_some_and(|v| !v.join("pyvenv.cfg").is_file())
+    }
+
+    /// Installed mode: create the user folders, seed the sample story on first launch, and (re)write
+    /// the MCP launcher so it points at wherever the app lives now.
+    fn prepare(&self) -> Result<(), String> {
+        let _ = fs::create_dir_all(&self.data);
+        if !self.installed {
+            return Ok(());
+        }
+        if !self.root.join("pyproject.toml").is_file() {
+            return Err(format!("The app's backend files are missing ({}). Reinstall Manga Studio.", self.root.display()));
+        }
+        if let Some(stories) = &self.stories {
+            if !stories.exists() {
+                fs::create_dir_all(stories).map_err(|e| format!("could not create {}: {e}", stories.display()))?;
+                let _ = copy_dir(&self.root.join("stories").join(SAMPLE), &stories.join(SAMPLE));
+            }
+        }
+        if let Some(launcher) = &self.launcher {
+            write_launcher(launcher, &self.root, &self.backend_env()).map_err(|e| format!("could not write {}: {e}", launcher.display()))?;
+        }
+        Ok(())
+    }
+}
+
+fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &to)?;
+        } else {
+            fs::copy(entry.path(), &to)?;
+        }
+    }
+    Ok(())
+}
+
+fn sh_quote(p: &Path) -> String {
+    format!("'{}'", p.display().to_string().replace('\'', r"'\''"))
+}
+
+/// A tiny script outside the bundle that agents register as their MCP server
+/// (`claude mcp add manga-studio -- <launcher>`). Rewritten on every launch, so moving or updating
+/// the app keeps registrations working. Env set by the agent (`claude mcp add -e ...`) wins.
+fn write_launcher(path: &Path, root: &Path, env: &[(&str, PathBuf)]) -> std::io::Result<()> {
+    let mut s = String::from("#!/bin/sh\n# Written by Manga Studio on every launch: runs its MCP bridge (studio mcp) from the installed app.\n");
+    s.push_str("PATH=\"$PATH:$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin\"\nexport PATH\n");
+    for (k, v) in env.iter().filter(|(k, _)| *k != "STUDIO_MCP_LAUNCHER") {
+        s.push_str(&format!("[ -n \"${k}\" ] || {k}={}\nexport {k}\n", sh_quote(v)));
+    }
+    s.push_str(&format!("exec uv run --frozen --project {} studio mcp \"$@\"\n", sh_quote(root)));
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::write(path, s)?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+}
+
+/// GUI apps on macOS start with PATH=/usr/bin:/bin:/usr/sbin:/sbin. Append the usual install places
+/// so the backend finds ffmpeg, claude, codex and ollama the way a terminal would.
+fn gui_path() -> String {
+    let h = home();
+    let mut dirs: Vec<String> = std::env::var("PATH").unwrap_or_default().split(':').filter(|d| !d.is_empty()).map(String::from).collect();
+    let extras = [h.join(".local/bin"), h.join(".cargo/bin"), h.join(".bun/bin"), "/opt/homebrew/bin".into(), "/opt/homebrew/sbin".into(), "/usr/local/bin".into()];
+    for e in extras.iter().map(|p| p.display().to_string()) {
+        if !dirs.contains(&e) {
+            dirs.push(e);
+        }
+    }
+    dirs.join(":")
 }
 
 fn backend_up() -> bool {
@@ -34,14 +213,14 @@ fn backend_up() -> bool {
 
 /// GUI apps on macOS start with a minimal PATH, so look for uv where installers put it.
 fn find_uv() -> Option<PathBuf> {
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = home();
     let mut candidates: Vec<PathBuf> = std::env::var("PATH")
         .unwrap_or_default()
         .split(':')
         .map(|d| Path::new(d).join("uv"))
         .collect();
     for d in [".local/bin", ".cargo/bin"] {
-        candidates.push(Path::new(&home).join(d).join("uv"));
+        candidates.push(home.join(d).join("uv"));
     }
     candidates.push(PathBuf::from("/opt/homebrew/bin/uv"));
     candidates.push(PathBuf::from("/usr/local/bin/uv"));
@@ -52,6 +231,8 @@ fn find_uv() -> Option<PathBuf> {
 struct Backend {
     child: Mutex<Option<Child>>,
     error: Mutex<Option<String>>,
+    /// The spawned backend is doing the installed app's first `uv sync` (slow: a minute or more).
+    first_run: Mutex<bool>,
 }
 
 #[derive(Serialize)]
@@ -62,26 +243,42 @@ struct BackendStatus {
     root: String,
     log: String,
     error: Option<String>,
+    /// Installed .app (true) or a checkout (false).
+    installed: bool,
+    first_run: bool,
+    /// Path of uv, or null when it isn't installed.
+    uv: Option<String>,
+    uv_install: String,
+    stories: Option<String>,
+    data: String,
 }
 
-fn log_path(root: &Path) -> PathBuf {
-    root.join(".studio").join("backend.log")
-}
-
-fn spawn_backend(state: &Backend) {
+fn spawn_backend(state: &Backend, layout: &Layout) {
+    // Before the reuse check: the MCP launcher and the seeded stories are needed either way.
+    if let Err(e) = layout.prepare() {
+        *state.error.lock().unwrap() = Some(e);
+        return;
+    }
     if backend_up() {
         return; // someone else runs it (terminal, agent): share it, don't own it
     }
-    let root = repo_root();
     let Some(uv) = find_uv() else {
-        *state.error.lock().unwrap() = Some("uv not found. Install it from https://docs.astral.sh/uv/ and reopen the app.".into());
+        *state.error.lock().unwrap() = Some(format!("uv not found. Manga Studio runs its backend with uv. Install it in Terminal with  {UV_INSTALL}  then click Restart."));
         return;
     };
-    let _ = fs::create_dir_all(root.join(".studio"));
-    let log = File::create(log_path(&root)).ok();
+    *state.first_run.lock().unwrap() = layout.first_run();
+    let log = File::create(&layout.log).ok();
     let mut cmd = Command::new(uv);
-    cmd.args(["run", "studio", "serve", "--port", &PORT.to_string()])
-        .current_dir(&root)
+    if layout.installed {
+        // --frozen: use the shipped uv.lock as is (never rewrite it inside the bundle).
+        let root = layout.root.display().to_string();
+        cmd.args(["run", "--frozen", "--project", &root, "studio", "serve", "--port", &PORT.to_string()])
+            .current_dir(&layout.data)
+            .envs(layout.backend_env());
+    } else {
+        cmd.args(["run", "studio", "serve", "--port", &PORT.to_string()]).current_dir(&layout.root);
+    }
+    cmd.env("PATH", gui_path())
         .stdin(Stdio::null())
         // Own process group: the child is `uv`, which doesn't forward signals to the Python server,
         // so stopping it means signalling the whole group (see stop_child).
@@ -115,28 +312,34 @@ fn stop_child(mut c: Child) {
 }
 
 #[tauri::command]
-fn backend_status(state: State<'_, Backend>) -> BackendStatus {
-    let root = repo_root();
+fn backend_status(state: State<'_, Backend>, layout: State<'_, Layout>) -> BackendStatus {
     let mut child = state.child.lock().unwrap();
     // If our child died, surface it instead of pretending it is still starting.
     if let Some(c) = child.as_mut() {
         if let Ok(Some(code)) = c.try_wait() {
-            *state.error.lock().unwrap() = Some(format!("backend exited ({code}); see {}", log_path(&root).display()));
+            *state.error.lock().unwrap() = Some(format!("backend exited ({code}); see {}", layout.log.display()));
             *child = None;
         }
     }
+    let up = backend_up();
     BackendStatus {
         url: format!("http://127.0.0.1:{PORT}"),
-        up: backend_up(),
+        up,
         spawned: child.is_some(),
-        root: root.display().to_string(),
-        log: log_path(&root).display().to_string(),
+        root: layout.root.display().to_string(),
+        log: layout.log.display().to_string(),
         error: state.error.lock().unwrap().clone(),
+        installed: layout.installed,
+        first_run: *state.first_run.lock().unwrap() && !up,
+        uv: find_uv().map(|p| p.display().to_string()),
+        uv_install: UV_INSTALL.into(),
+        stories: layout.stories.as_ref().map(|p| p.display().to_string()),
+        data: layout.data.display().to_string(),
     }
 }
 
 #[tauri::command]
-fn restart_backend(state: State<'_, Backend>) -> Result<(), String> {
+fn restart_backend(state: State<'_, Backend>, layout: State<'_, Layout>) -> Result<(), String> {
     let child = state.child.lock().unwrap().take();
     if let Some(c) = child {
         stop_child(c);
@@ -150,14 +353,13 @@ fn restart_backend(state: State<'_, Backend>) -> Result<(), String> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    spawn_backend(&state);
+    spawn_backend(&state, &layout);
     Ok(())
 }
 
 /// First run is decided by the backend's settings file (`onboarded: true` once setup is done).
-fn onboarded(root: &Path) -> bool {
-    let path = std::env::var("STUDIO_SETTINGS").map(PathBuf::from).unwrap_or_else(|_| root.join(".studio").join("settings.json"));
-    fs::read_to_string(path)
+fn onboarded(layout: &Layout) -> bool {
+    fs::read_to_string(&layout.settings)
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .and_then(|v| v.get("onboarded").and_then(|b| b.as_bool()))
@@ -213,8 +415,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![backend_status, restart_backend, finish_onboarding])
         .setup(|app| {
-            spawn_backend(&app.state::<Backend>());
-            if onboarded(&repo_root()) {
+            let layout = Layout::detect(app.handle());
+            spawn_backend(&app.state::<Backend>(), &layout);
+            let done = onboarded(&layout);
+            app.manage(layout);
+            if done {
                 if let Some(main) = app.get_webview_window("main") {
                     main.show()?;
                 }
