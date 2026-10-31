@@ -3,6 +3,8 @@ name = "manga-studio"
 version = "0.2.0"
 description = "Local manga/webtoon studio: Qwen-Image on Apple Silicon, driven by you or your AI agent"
 edition = "2021"
+license = "BSD-3-Clause"
+repository = "https://github.com/Himasnhu-AT/manga-studio"
 
 [lib]
 name = "manga_studio_lib"

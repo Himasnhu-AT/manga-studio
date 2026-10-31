@@ -11,3 +11,6 @@ stories/*/state.json
 .claude/settings.local.json
 .studio/
 .claude/worktrees/
+
+# local agent notes (not published)
+HANDOFF.md

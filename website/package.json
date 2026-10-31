@@ -1,5 +1,6 @@
 {
   "name": "manga-studio-website",
+  "license": "BSD-3-Clause",
   "private": true,
   "version": "0.1.0",
   "type": "module",
