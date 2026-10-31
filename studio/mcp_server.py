@@ -135,6 +135,21 @@ def update_story(story: str, changes: dict) -> dict:
 
 
 @server.tool()
+def set_pages(story: str, pages: list[dict]) -> dict:
+    """Lay out page mode by hand. pages: [{id: "pg1", panels: [{panel: "p01", box: [x, y, w, h]}, ...]}];
+    boxes are fractions of the page's live area. Match a slot's shape to its art (a 3:4 panel in a wide
+    slot gets cropped to a strip); in RTL the first panel goes top right."""
+    return _api("PUT", f"/api/stories/{story}/pages", json={"pages": pages})
+
+
+@server.tool()
+def auto_layout(story: str, per_page: int = 4) -> dict:
+    """Replace the page layout with an automatic one (per_page panels a page). Check the result with
+    export or the app: wide automatic slots can crop portrait art; use set_pages to fix."""
+    return _api("POST", f"/api/stories/{story}/pages/auto", json={"per_page": per_page})
+
+
+@server.tool()
 def update_panel(story: str, panel: str, changes: dict) -> dict:
     """Edit one panel. Keys: title, action, refs (panel ids or refs/ files, max 10, anchors first),
     use (block names), cast (cast ids), seed, strength, bubbles, sfx, layers, crop, protect, strip.

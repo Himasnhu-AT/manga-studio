@@ -248,7 +248,7 @@ API at `STUDIO_URL` (default http://127.0.0.1:7860). The workflow and consistenc
 server instructions. 26 tools: `list_projects`, `get_project`, `create_project`, `update_story`,
 `update_panel`, `add_panel`, `set_cast`, `prompt_preview`, `generate` (waits by default),
 `copilot`, `segment`, `edit_image` (same op JSON as `/edit`; waits for fix/extend candidates), `view_image` (returns the picture, max 1024 px JPEG, so the agent can look), `jobs`,
-`get_feedback`, `resolve_note`, `pick_version`, `auto_letter`, `export`, `pipeline_new`,
+`get_feedback`, `resolve_note`, `pick_version`, `auto_letter`, `set_pages`, `auto_layout`, `export`, `pipeline_new`,
 `pipeline_status`, `pipeline_run`, `pipeline_task`, `pipeline_submit`. When the backend isn't
 running, tools fail with a message telling the agent to open the app or run `uv run studio serve`.
 

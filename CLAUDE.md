@@ -53,7 +53,7 @@ When `manga-studio` MCP tools are available (registered with
 the same running backend the app uses, and `view_image` hands you the picture directly. Tools:
 `list_projects`, `get_project`, `create_project`, `update_story`, `update_panel`, `add_panel`,
 `set_cast`, `prompt_preview`, `generate`, `copilot`, `segment`, `edit_image`, `view_image`, `jobs`, `get_feedback`,
-`resolve_note`, `pick_version`, `auto_letter`, `export`, `pipeline_new`, `pipeline_status`,
+`resolve_note`, `pick_version`, `auto_letter`, `set_pages`, `auto_layout`, `export`, `pipeline_new`, `pipeline_status`,
 `pipeline_run`, `pipeline_task`, `pipeline_submit`.
 
 Use the CLI (and Read on PNG paths) when MCP isn't connected, for `video`/`compose`, or when you need
