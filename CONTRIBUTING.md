@@ -27,6 +27,15 @@ cd app && pnpm exec tsc -b && pnpm exec vite build
   it when you change any of them.
 - UI copy is short and plain, without em dashes. Motion respects reduced motion.
 - Never commit generated images (`stories/*/out`, `final/`), `.env` files or model weights.
+- If users will notice the change, add a line to `## [Unreleased]` in `CHANGELOG.md`:
+
+  ```bash
+  scripts/changelog.sh add "Bubbles no longer jump when a panel is cropped" --type fixed
+  ```
+
+  Types: `added`, `changed` (default), `fixed`, `removed`, `deprecated`, `security`. The next
+  release turns these notes into its section and its GitHub release notes
+  ([docs/RELEASING.md](docs/RELEASING.md)).
 
 ## License
 

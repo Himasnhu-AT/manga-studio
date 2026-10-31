@@ -40,13 +40,73 @@ notarytool asks for the secret and keeps it in the login keychain; it never goes
 Check it with `xcrun notarytool history --keychain-profile manga-studio-notary`. To use a profile
 with another name, set `NOTARY_PROFILE`.
 
-## Cut a release (local, the main path)
+## Cut a release: `scripts/deploy.sh` (the normal path)
 
-1. Bump the version in `app/src-tauri/tauri.conf.json`, `app/package.json`,
-   `app/src-tauri/Cargo.toml` and `DOWNLOAD.version` in `website/components/site.ts`.
-2. Add a `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md`.
-3. Commit, merge to `main` and push `main`.
-4. Run the script from a clean checkout of `main`:
+From a clean, up-to-date checkout of `main`:
+
+```bash
+scripts/deploy.sh patch --dry-run   # rehearse: checks, bump, notes, signed build; then puts every file back
+scripts/deploy.sh patch             # 0.2.0 -> 0.2.1 (or minor, major, or an exact X.Y.Z)
+```
+
+It runs these steps and stops at the first failure:
+
+1. **Preflight.** You are on `main`, the tree is clean, and `main` isn't behind `origin/main`. The
+   tag and the GitHub release are free, `gh` is logged in, the Developer ID identity is in the
+   keychain and the `manga-studio-notary` profile works. Then `uv run pytest -q tests/`, the app
+   typecheck and build, and the website build.
+2. **Version.** `scripts/version.sh set X.Y.Z` writes the version everywhere it lives:
+   `tauri.conf.json`, `app/package.json`, `Cargo.toml` and its `Cargo.lock` entry, `pyproject.toml`
+   and its `uv.lock` entry, `website/package.json` and `DOWNLOAD.version` in
+   `website/components/site.ts`.
+3. **Changelog.** The notes under `## [Unreleased]` become `## [X.Y.Z] - today`, a fresh empty
+   `[Unreleased]` goes on top, and the compare links at the bottom are updated. If `[Unreleased]` is
+   empty, the section is drafted from commit subjects since the last release (Added / Changed /
+   Fixed) and opens in `$EDITOR`. Before going on it shows the notes and asks; `--yes` skips the
+   editor and the question.
+4. **Publish.** It commits "Release vX.Y.Z", pushes `main` and runs
+   `scripts/release-mac.sh --publish` with that section as the release notes, then fetches the tag.
+5. **Verify.** The release has `Manga-Studio-macOS-arm64.dmg`, the versioned DMG and
+   `SHA256SUMS.txt`, and `/releases/latest/download/Manga-Studio-macOS-arm64.dmg` redirects to it.
+   It prints the release URL. Re-run this check any time with `scripts/deploy.sh verify X.Y.Z`.
+
+Options: `--yes` (no review), `--dry-run`, `--notes-file F` (release notes from F instead of the
+CHANGELOG section). Passing the current version releases it as is, without a bump, when the
+CHANGELOG already has its section and there is no tag yet. That is how the first release, 0.2.0,
+goes out: `scripts/deploy.sh 0.2.0`.
+
+`--dry-run` softens the git, `gh` and notary checks to warnings, so it also works from a branch
+before the notary profile exists. It shows the version diff and the notes, runs
+`scripts/release-mac.sh --dry-run`, and then restores every file it changed. Nothing is committed,
+pushed, tagged or uploaded.
+
+**If it fails after the release commit** (notarization rejected, upload interrupted), it prints the
+commands to finish. The release commit is already on `main`, so you don't run `deploy.sh` again:
+
+```bash
+scripts/release-mac.sh --publish --skip-build   # reuse the .app already built (and notarized)
+scripts/release-mac.sh --publish                # or build again
+scripts/deploy.sh verify X.Y.Z
+```
+
+### Between releases: keep the changelog
+
+Add a line to `[Unreleased]` whenever you merge something users will notice:
+
+```bash
+scripts/changelog.sh add "Export sheet remembers the last paper size" --type added
+scripts/changelog.sh add "Bubbles no longer jump when a panel is cropped" --type fixed
+scripts/changelog.sh unreleased     # what the next release will say
+```
+
+Types are `added`, `changed` (the default), `fixed`, `removed`, `deprecated` and `security`.
+`scripts/changelog.sh draft` previews what would be drafted from commits.
+
+## `scripts/release-mac.sh` (the lower-level step)
+
+`deploy.sh` calls this script to build, sign, notarize and publish. Run it by hand to rebuild or to
+finish an interrupted release. It expects the version and the CHANGELOG section to be committed
+already (`scripts/version.sh check` must pass):
 
 ```bash
 scripts/release-mac.sh --dry-run    # checks + signed build + signed DMG; no notarization, no upload
@@ -60,7 +120,7 @@ reuses the stapled `.app` and makes, notarizes and staples a new DMG. Pass
 
 The script stops before building if any of these fails:
 
-- the versions in `tauri.conf.json`, `app/package.json` and `Cargo.toml` match
+- the version is the same in every file (`scripts/version.sh check`)
 - the git tree is clean, you are on `main`, and `vX.Y.Z` isn't a tag yet, locally or on origin
 - `gh` is logged in (needed for `--publish`)
 - the Developer ID identity is in the keychain
@@ -148,8 +208,9 @@ builds it as is, so there is no `vercel.json`.
    `git diff --quiet HEAD^ HEAD -- .` so only commits that touch `website/` deploy.
 
 The Download button needs no deploy for a new release, because `/releases/latest/download/` always
-points to the newest release. Do update `DOWNLOAD.version` in `website/components/site.ts`, which
-the button's caption shows.
+points to the newest release. The button's caption shows `DOWNLOAD.version` from
+`website/components/site.ts`; `deploy.sh` bumps it with the rest, and the push to `main` redeploys
+the site.
 
 ## Notes
 
