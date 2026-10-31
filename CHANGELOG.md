@@ -1,7 +1,12 @@
 # Changelog
 
-Release notes for the macOS app. `scripts/release-mac.sh --publish` uses the section whose heading
-matches the version in `app/src-tauri/tauri.conf.json`.
+All notable changes to Manga Studio. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and versions follow [Semantic Versioning](https://semver.org/).
+
+Add notes to `## [Unreleased]` as you go with `scripts/changelog.sh add "..." --type added|changed|fixed`.
+`scripts/deploy.sh` turns them into the next version's section and uses it as the GitHub release notes.
+
+## [Unreleased]
 
 ## [0.2.0] - 2026-10-31
 
@@ -47,3 +52,6 @@ Developer ID and notarized by Apple.
 ### Requirements
 - An Apple Silicon Mac with macOS 14 or later; 24 GB of memory recommended.
 - `uv` installed (the app runs its Python backend with it).
+
+[Unreleased]: https://github.com/Himasnhu-AT/manga-studio/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Himasnhu-AT/manga-studio/releases/tag/v0.2.0

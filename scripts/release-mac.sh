@@ -78,24 +78,15 @@ fi
 
 [[ "$(uname -m)" == "arm64" ]] || fail "build on Apple Silicon (this is $(uname -m))"
 
-VERSION="$(node -p "require('./app/src-tauri/tauri.conf.json').version")"
-PKG_VERSION="$(node -p "require('./app/package.json').version")"
-CARGO_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' app/src-tauri/Cargo.toml | head -1)"
+# scripts/version.sh is the one reader/writer of the version (tauri.conf.json, package.json files,
+# Cargo.toml/.lock, pyproject.toml/uv.lock, the website's DOWNLOAD.version).
+VERSION="$(scripts/version.sh get)"
 TAG="v$VERSION"
-if [[ "$VERSION" == "$PKG_VERSION" && "$VERSION" == "$CARGO_VERSION" ]]; then
-  ok "version $VERSION (tauri.conf.json, app/package.json, Cargo.toml)"
+if VCHECK="$(scripts/version.sh check 2>&1)"; then
+  ok "version $VERSION in every file (scripts/version.sh check)"
 else
-  fail "versions differ: tauri.conf.json=$VERSION app/package.json=$PKG_VERSION Cargo.toml=$CARGO_VERSION"
-fi
-SITE_VERSION="$(node -e '
-  const s = require("fs").readFileSync("website/components/site.ts", "utf8");
-  const m = s.match(/DOWNLOAD\s*=\s*\{[^}]*?version:\s*"([^"]+)"/);
-  console.log(m ? m[1] : "");
-')"
-if [[ "$SITE_VERSION" == "$VERSION" ]]; then
-  ok "website download version $SITE_VERSION (website/components/site.ts)"
-else
-  warn "website/components/site.ts DOWNLOAD.version is '$SITE_VERSION', expected $VERSION (the site shows the wrong version)"
+  printf '%s\n' "$VCHECK" | sed 's/^/      /'
+  fail "versions differ (fix with: scripts/version.sh set $VERSION)"
 fi
 
 # In a dry run the git checks only warn, so the build can be tried from a branch.
@@ -180,12 +171,14 @@ fi
 if [[ $PUBLISH -eq 1 ]]; then
   NOTES_TMP="$(mktemp -t manga-studio-notes)"
   if [[ -n "$NOTES_FILE" ]]; then
-    [[ -s "$NOTES_FILE" ]] && cp "$NOTES_FILE" "$NOTES_TMP" || fail "notes file $NOTES_FILE is missing or empty"
+    if [[ -s "$NOTES_FILE" ]]; then
+      /bin/cp -f "$NOTES_FILE" "$NOTES_TMP"
+      ok "release notes from $NOTES_FILE"
+    else
+      fail "notes file $NOTES_FILE is missing or empty"
+    fi
   else
-    awk -v v="$VERSION" '
-      /^## / { if (on) exit; if (index($0, "[" v "]") || $2 == v) { on = 1; next } }
-      on { print }
-    ' CHANGELOG.md >"$NOTES_TMP" 2>/dev/null || true
+    scripts/changelog.sh section "$VERSION" >"$NOTES_TMP" 2>/dev/null || true
     if grep -q '[^[:space:]]' "$NOTES_TMP"; then ok "release notes from CHANGELOG.md [$VERSION]"; else fail "no '## [$VERSION]' section in CHANGELOG.md (or pass --notes-file)"; fi
   fi
 fi
@@ -301,6 +294,7 @@ fi
 /bin/cp -f "$OUT/$VERSIONED_DMG" "$OUT/$STABLE_DMG"
 (cd "$OUT" && shasum -a 256 "$STABLE_DMG" "$VERSIONED_DMG" >SHA256SUMS.txt)
 ok "assets in dist/release/:"
+# shellcheck disable=SC2012 # a listing for people, of names this script chose
 (cd "$OUT" && ls -lh | sed '1d;s/^/        /' && sed 's/^/        /' SHA256SUMS.txt)
 
 ASSETS=("$OUT/$STABLE_DMG" "$OUT/$VERSIONED_DMG" "$OUT/SHA256SUMS.txt")
