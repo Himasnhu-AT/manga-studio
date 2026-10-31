@@ -49,27 +49,44 @@ function StudioBody({ story }: { story: StoryDetail }) {
 
   // ---- pages: optimistic local copy, debounced save --------------------------------
   const [localPages, setLocalPages] = useState<Page[] | null>(null);
-  const pending = useRef(false);
+  // Every change gets a number; the local copy is dropped only once the newest change has been
+  // saved, so an older save landing first can't flash an older layout.
+  const seq = useRef(0);
+  const savedSeq = useRef(0);
+  const queued = useRef<{ slug: string; pages: Page[]; n: number } | null>(null);
   const timer = useRef<number | undefined>(undefined);
   const serverPages = JSON.stringify(story.pages ?? []);
   useEffect(() => {
-    if (!pending.current) setLocalPages(null);
+    if (savedSeq.current === seq.current) setLocalPages(null);
   }, [serverPages]);
   const pages = localPages ?? storyPages(story);
   const previewLayout = mode === "page" && !story.pages?.length && pages.length > 0;
+  const flushPages = useCallback(async () => {
+    window.clearTimeout(timer.current);
+    const q = queued.current;
+    queued.current = null;
+    if (!q) return;
+    await attempt(() => Api.putPages(q.slug, q.pages));
+    savedSeq.current = Math.max(savedSeq.current, q.n);
+  }, []);
   const onPagesChange = useCallback(
     (next: Page[]) => {
       setLocalPages(next);
-      pending.current = true;
+      queued.current = { slug: story.slug, pages: next, n: ++seq.current };
       window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(async () => {
-        await attempt(() => Api.putPages(story.slug, next));
-        pending.current = false;
-      }, 400);
+      timer.current = window.setTimeout(() => void flushPages(), 400);
     },
-    [story.slug],
+    [story.slug, flushPages],
   );
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  // leaving the studio (or the window) right after a drag still saves it
+  useEffect(() => {
+    const onHide = () => void flushPages();
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      void flushPages();
+    };
+  }, [flushPages]);
 
   // keep the page index valid; follow the selected panel to its page
   useEffect(() => {
