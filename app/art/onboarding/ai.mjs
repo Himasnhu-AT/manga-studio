@@ -83,7 +83,7 @@ function base() {
   out.push(L([22, 14, 18].map((w, i) => k.lineOnTop([label.x + 6 + i * 5, label.y + 5], [label.x + 8 + i * 5, label.y + 5 + w], 0.8, P)).join(""), { tone: "lo", free: true }));
   out.push(D([at([label.x + label.w - 4, label.y + 3.5, 0.8]), at([label.x + label.w - 4, label.y + label.d - 3.5, 0.8])], { size: 0.42 }));
   // ruler strip along the near long edge
-  const strip = { x: PLATE.x + PLATE.w - 11, y: PLATE.y + 14, w: 6, d: PLATE.d - 28, r: 1 };
+  const strip = { x: PLATE.x + PLATE.w - 11, y: PLATE.y + 12, w: 6, d: PANEL.y - 4 - PLATE.y - 12, r: 1 };
   out.push(S(k.slabOf(strip, 0, 0.6, P, 3), { tone: "lo", crease: "none" }));
   const ticks = k.topTicks(strip.y + 3, strip.y + strip.d - 3, 4, 5, strip.x, 0.6, [1.8, 3.4], P, "y");
   out.push(L(ticks.minor, { tone: "lo" }), L(ticks.major, { tone: "mid", free: "end" }));
