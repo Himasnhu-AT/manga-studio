@@ -1,4 +1,10 @@
-# manga-studio
+# Manga Studio
+
+[![CI](https://github.com/Himasnhu-AT/manga-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/Himasnhu-AT/manga-studio/actions/workflows/ci.yml)
+[![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
+
+**[mangastudio.marlstudio.com](https://mangastudio.marlstudio.com)** ·
+[Download for Mac](https://github.com/Himasnhu-AT/manga-studio/releases/latest) (Apple Silicon)
 
 A local manga/webtoon studio for Apple Silicon. Write or paste a story, draw it with
 **Qwen-Image-2.1 running on your Mac** (mflux / MLX), letter it with vector bubbles, read it, export it.
@@ -59,5 +65,10 @@ The `studio` CLI still works for everything (see `CLAUDE.md`).
 Print PDF (B5/A5 with bleed and margins, or digital), layered SVG per page (raster panels +
 vector lettering), PNG pages or webtoon slices, and the v0.1 `studio video` mp4.
 
-Model license: Qwen-Image-2.1 is under the Qwen Research License (research/evaluation use).
-Fonts: Comic Neue (SIL OFL, `fonts/OFL.txt`), Geist (SIL OFL).
+## License
+
+Manga Studio is under the [BSD 3-Clause License](LICENSE). The Qwen-Image-2.1 model it downloads is
+under its own license, the Qwen Research License (research/evaluation use).
+
+Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+Fonts: Comic Neue (SIL OFL, `fonts/OFL.txt`), Geist and Kalam (SIL OFL).
