@@ -14,7 +14,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{Manager, RunEvent, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 const PORT: u16 = 7860;
 
@@ -154,14 +154,73 @@ fn restart_backend(state: State<'_, Backend>) -> Result<(), String> {
     Ok(())
 }
 
+/// First run is decided by the backend's settings file (`onboarded: true` once setup is done).
+fn onboarded(root: &Path) -> bool {
+    let path = std::env::var("STUDIO_SETTINGS").map(PathBuf::from).unwrap_or_else(|_| root.join(".studio").join("settings.json"));
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("onboarded").and_then(|b| b.as_bool()))
+        .unwrap_or(false)
+}
+
+/// Setup runs in its own small window: borderless (no traffic lights), transparent so the page
+/// draws its own rounded card, and fixed in size. The main window stays hidden until it's done.
+fn open_onboarding(app: &AppHandle) -> tauri::Result<()> {
+    WebviewWindowBuilder::new(app, "onboarding", WebviewUrl::App("index.html".into()))
+        .title("Welcome to Manga Studio")
+        .inner_size(880.0, 580.0)
+        .resizable(false)
+        .maximizable(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(true)
+        .center()
+        .focused(true)
+        .build()?;
+    Ok(())
+}
+
+/// Called by the onboarding window when setup is done (or skipped): show the main window, tell
+/// it where to go, close the onboarding window.
+#[tauri::command]
+fn finish_onboarding(app: AppHandle, view: String, slug: Option<String>) -> Result<(), String> {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.emit("onboarded", serde_json::json!({ "view": view, "slug": slug }));
+        main.show().map_err(|e| e.to_string())?;
+        let _ = main.set_focus();
+    }
+    if let Some(w) = app.get_webview_window("onboarding") {
+        let _ = w.close();
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(Backend::default())
-        .invoke_handler(tauri::generate_handler![backend_status, restart_backend])
+        .on_window_event(|window, event| {
+            // Closing setup with Cmd+W (there's no close button) quits instead of leaving an app with no window.
+            if window.label() == "onboarding" && matches!(event, WindowEvent::Destroyed) {
+                let app = window.app_handle();
+                let main_visible = app.get_webview_window("main").and_then(|m| m.is_visible().ok()).unwrap_or(false);
+                if !main_visible {
+                    app.exit(0);
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![backend_status, restart_backend, finish_onboarding])
         .setup(|app| {
             spawn_backend(&app.state::<Backend>());
+            if onboarded(&repo_root()) {
+                if let Some(main) = app.get_webview_window("main") {
+                    main.show()?;
+                }
+            } else {
+                open_onboarding(app.handle())?;
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

@@ -13,6 +13,19 @@
   font-weight: 100 900;
   font-display: swap;
 }
+/* Kalam (OFL): hand-lettered face for onboarding, to match its hand-drawn illustrations. */
+@font-face {
+  font-family: "Kalam";
+  src: url("./assets/fonts/Kalam-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Kalam";
+  src: url("./assets/fonts/Kalam-700.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
 @font-face {
   font-family: "Comic Neue";
   src: url("./assets/fonts/ComicNeue-Bold.ttf") format("truetype");
@@ -28,6 +41,7 @@
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
   --font-letter: "Comic Neue", "Geist", sans-serif;
+  --font-hand: "Kalam", "Geist", sans-serif;
 
   --color-canvas: #f4f4f2; /* app background behind pages */
   --color-paper: #fcfcfb; /* surfaces, sheets */
@@ -92,6 +106,20 @@ textarea,
 }
 
 /* Display type tightens as it grows; small text stays near zero (apple-design §15). */
+/* The setup window is transparent and borderless: the page draws its own rounded card. */
+html.setup-window,
+html.setup-window body {
+  background: transparent;
+}
+
+/* Hand-lettered type for onboarding, paired with its hand-drawn illustrations. */
+.type-hand {
+  font-family: var(--font-hand);
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  line-height: 1.12;
+}
+
 .type-display {
   font-size: 28px;
   line-height: 1.1;

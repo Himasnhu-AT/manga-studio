@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { BookOpen, CaretLeft, FlowArrow, GearSix, PaintBrushBroad } from "@phosphor-icons/react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Api, type Settings as SettingsT } from "./lib/api";
 import { useLive } from "./lib/live";
 import { useApp, type View } from "./lib/store";
@@ -12,7 +12,8 @@ import { Studio } from "./views/studio/Studio";
 import { Pipeline } from "./views/Pipeline";
 import { Reader } from "./views/Reader";
 import { Settings } from "./views/Settings";
-import { Onboarding } from "./views/Onboarding";
+import { Onboarding, type OnboardingTarget } from "./views/Onboarding";
+import { inTauri } from "./views/app-common";
 
 const PROJECT_VIEWS: { value: View; label: string; icon: React.ReactNode }[] = [
   { value: "studio", label: "Studio", icon: <PaintBrushBroad size={14} /> },
@@ -29,6 +30,28 @@ export function App() {
   useEffect(() => {
     if (settings.data && !settings.data.onboarded) setOnboarding(true);
   }, [settings.data, setOnboarding]);
+
+  // Desktop app: setup runs in its own window; when it finishes, this (hidden) main window is shown
+  // and told where to go.
+  const finishOnboarding = (t: OnboardingTarget) => {
+    go(t.view, t.slug);
+    setOnboarding(false);
+    void settings.reload();
+  };
+  const finishRef = useRef(finishOnboarding);
+  finishRef.current = finishOnboarding;
+  useEffect(() => {
+    if (!inTauri()) return;
+    let off: (() => void) | undefined;
+    let dead = false;
+    void import("@tauri-apps/api/event").then(({ listen }) =>
+      listen<OnboardingTarget>("onboarded", (e) => finishRef.current(e.payload)).then((u) => (dead ? u() : (off = u))),
+    );
+    return () => {
+      dead = true;
+      off?.();
+    };
+  }, []);
 
   const inProject = view === "studio" || view === "pipeline" || view === "reader";
 
@@ -85,7 +108,7 @@ export function App() {
         </AnimatePresence>
       </main>
 
-      <AnimatePresence>{onboarding && <Onboarding onDone={() => { setOnboarding(false); void settings.reload(); }} />}</AnimatePresence>
+      <AnimatePresence>{onboarding && <Onboarding onDone={finishOnboarding} />}</AnimatePresence>
       <Toasts />
     </div>
   );

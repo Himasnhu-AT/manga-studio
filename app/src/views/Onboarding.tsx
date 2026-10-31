@@ -1,20 +1,58 @@
-// First-run setup. Full-window overlay, one question per screen.
+// First-run setup: a small card, one question per screen, a hand-drawn illustration per step.
+// Desktop app: the card fills its own borderless window (see lib.rs open_onboarding).
+// Browser: the card floats over the app.
 // Motion: steps slide in the direction of travel (Next: from the right, Back: from the left) on a
-// critically damped spring; MotionConfig reducedMotion="user" turns that into a crossfade.
+// critically damped spring; the illustration crossfades. MotionConfig reducedMotion="user" turns
+// the slide into a crossfade.
 
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, ArrowRight, CheckCircle, CloudArrowDown, Cpu, HardDrives, Memory, WarningCircle, FilmStrip } from "@phosphor-icons/react";
 import { useEffect, useState, type ReactNode } from "react";
+import type { View } from "../lib/store";
 import { Api, type ModelInfo, type Settings, type SystemInfo } from "../lib/api";
 import { useLive } from "../lib/live";
-import { attempt, useApp } from "../lib/store";
+import { attempt } from "../lib/store";
 import { Badge, Button, Progress, cx, spring } from "../ui/kit";
 import { AiConnect } from "./app-ai";
-import { CheckRow, fmtBytes } from "./app-common";
+import { CheckRow, fmtBytes, inTauri } from "./app-common";
 import { NewProjectChoices, createFromDraft, draftError, emptyDraft, type ProjectDraft } from "./NewProject";
 
 const STEPS = ["welcome", "mac", "model", "ai", "project"] as const;
 type Step = (typeof STEPS)[number];
+
+// Hand-drawn illustrations (app/art/onboarding, built with the anatomy kit). Globbed so a missing
+// one leaves the panel empty instead of breaking the build.
+const ART_FILES = import.meta.glob("../assets/onboarding/*.svg", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
+const art = (step: Step) => ART_FILES[`../assets/onboarding/${step}.svg`];
+const CAPTION: Record<Step, string> = {
+  welcome: "Your studio",
+  mac: "Checking the bench",
+  model: "Fetching the model",
+  ai: "Plug in a writer",
+  project: "Fresh pages",
+};
+
+export type OnboardingTarget = { view: View; slug: string | null };
+
+/** True in the desktop app's setup window (Tauri window label "onboarding"). */
+export function isOnboardingWindow() {
+  if (!inTauri()) return false;
+  const w = window as unknown as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } };
+  return w.__TAURI_INTERNALS__?.metadata?.currentWindow?.label === "onboarding";
+}
+
+/** Root of the setup window: the card fills the window; finishing hands over to the main window. */
+export function OnboardingWindow() {
+  const finish = async (t: OnboardingTarget) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("finish_onboarding", { view: t.view, slug: t.slug });
+  };
+  return (
+    <div className="h-full w-full p-px">
+      <Onboarding windowed onDone={(t) => void finish(t)} />
+    </div>
+  );
+}
 
 export const DEFAULT_SETTINGS: Settings = {
   onboarded: false,
@@ -49,14 +87,13 @@ const slide = {
   exit: (dir: number) => ({ opacity: 0, transform: `translateX(${dir * -28}px)` }),
 };
 
-export function Onboarding({ onDone }: { onDone: () => void }) {
+export function Onboarding({ onDone, windowed = false }: { onDone: (t: OnboardingTarget) => void; windowed?: boolean }) {
   const [i, setI] = useState(0);
   const [dir, setDir] = useState(1);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [draft, setDraft] = useState<ProjectDraft>(emptyDraft);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const go = useApp((s) => s.go);
   const step: Step = STEPS[i];
 
   useEffect(() => {
@@ -85,14 +122,12 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     if (!r) return setBusy(false);
     await attempt(() => Api.putSettings({ ...settings, onboarded: true }));
     setBusy(false);
-    go(r.view, r.slug);
-    onDone();
+    onDone({ view: r.view, slug: r.slug });
   };
 
   const skipAll = async () => {
     await attempt(() => Api.putSettings({ ...settings, onboarded: true }));
-    go("library");
-    onDone();
+    onDone({ view: "library", slug: null });
   };
 
   // Enter advances (but not while typing in a multi-line field).
@@ -107,81 +142,124 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     return () => window.removeEventListener("keydown", k);
   });
 
+  const src = art(step);
+  const card = (
+    <div className="flex h-full w-full overflow-hidden rounded-[var(--radius-surface)] border border-line-2 bg-paper">
+      {/* left: brand, illustration, progress. The whole column drags the borderless window. */}
+      <aside data-tauri-drag-region className="relative flex w-[340px] shrink-0 flex-col border-r border-line bg-canvas">
+        <div data-tauri-drag-region className="flex h-12 shrink-0 items-center gap-2 px-5">
+          <span className="inline-block size-3 rounded-[3px] bg-accent" aria-hidden />
+          <span className="type-hand pt-0.5 text-[17px]" data-tauri-drag-region>
+            Manga Studio
+          </span>
+        </div>
+        <div data-tauri-drag-region className="relative min-h-0 flex-1">
+          <AnimatePresence initial={false}>
+            {src && (
+              <motion.img
+                key={step}
+                src={src}
+                alt=""
+                draggable={false}
+                className="pointer-events-none absolute inset-0 m-auto h-auto max-h-full w-full object-contain px-5"
+                initial={{ opacity: 0, transform: "translateY(6px)" }}
+                animate={{ opacity: 1, transform: "translateY(0px)" }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
+              />
+            )}
+          </AnimatePresence>
+        </div>
+        <div data-tauri-drag-region className="flex flex-col gap-2.5 px-5 pb-5">
+          <span className="type-hand text-[15px] text-ink-2" data-tauri-drag-region>
+            {CAPTION[step]}
+          </span>
+          <div className="flex gap-1.5" aria-label={`Setup progress ${i + 1} of ${STEPS.length}`}>
+            {STEPS.map((s, n) => (
+              <span key={s} className={cx("h-[3px] flex-1 rounded-full transition-colors duration-300", n <= i ? "bg-ink" : "bg-line-2")} />
+            ))}
+          </div>
+        </div>
+      </aside>
+
+      {/* right: the step and its actions */}
+      <section className="flex min-w-0 flex-1 flex-col">
+        <div data-tauri-drag-region className="flex h-12 shrink-0 items-center justify-end px-3">
+          <Button size="sm" variant="ghost" onClick={skipAll}>
+            Skip setup
+          </Button>
+        </div>
+        <div className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-8 pt-2 pb-6">
+          <AnimatePresence mode="popLayout" custom={dir} initial={false}>
+            <motion.div key={step} custom={dir} variants={slide} initial="enter" animate="center" exit="exit" transition={spring}>
+              {step === "welcome" && <Welcome />}
+              {step === "mac" && <ThisMac />}
+              {step === "model" && <ModelStep settings={settings} />}
+              {step === "ai" && (
+                <StepFrame title="Who writes the prompts?" body="Pick the AI that drives the studio. You can change this any time in Settings.">
+                  <AiConnect settings={settings} onChange={setSettings} />
+                </StepFrame>
+              )}
+              {step === "project" && (
+                <StepFrame title="Your first project" body="Start from the sample, an empty project, or a story you already have.">
+                  <NewProjectChoices draft={draft} onChange={(d) => { setDraft(d); setErr(null); }} />
+                </StepFrame>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 border-t border-line px-5 py-3">
+          {i > 0 && (
+            <Button variant="ghost" icon={<ArrowLeft size={14} />} onClick={() => move(-1)}>
+              Back
+            </Button>
+          )}
+          {err && <p className="min-w-0 truncate text-[12.5px] text-err">{err}</p>}
+          <div className="ml-auto flex items-center gap-2">
+            {step === "model" && (
+              <Button variant="ghost" onClick={() => move(1)}>
+                Skip for now
+              </Button>
+            )}
+            <Button variant="primary" loading={busy} trailing={step !== "project" ? <ArrowRight size={14} /> : undefined} onClick={() => void next()}>
+              {step === "welcome" ? "Get started" : step === "project" ? (draft.kind === "text" ? "Create and run" : "Open studio") : "Continue"}
+            </Button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+
+  if (windowed) return card;
   return (
     <motion.div
-      className="fixed inset-0 z-40 flex flex-col bg-paper"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-ink/25 p-6 backdrop-blur-[2px]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
     >
-      <div data-tauri-drag-region className="flex h-12 shrink-0 items-center justify-between pr-4 pl-[84px]">
-        <span className="flex items-center gap-2 text-[13px] font-semibold tracking-[-0.01em]" data-tauri-drag-region>
-          <span className="inline-block size-3 rounded-[3px] bg-accent" aria-hidden />
-          Manga Studio
-        </span>
-        <Button size="sm" variant="ghost" onClick={skipAll}>
-          Skip setup
-        </Button>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-[560px] flex-col px-6 pt-10 pb-8">
-          <div className="mb-10 flex gap-1.5" aria-label={`Setup progress ${i + 1} of ${STEPS.length}`}>
-            {STEPS.map((s, n) => (
-              <span key={s} className={cx("h-[3px] flex-1 rounded-full transition-colors duration-300", n <= i ? "bg-ink" : "bg-line-2")} />
-            ))}
-          </div>
-
-          <div className="relative flex-1">
-            <AnimatePresence mode="popLayout" custom={dir} initial={false}>
-              <motion.div key={step} custom={dir} variants={slide} initial="enter" animate="center" exit="exit" transition={spring}>
-                {step === "welcome" && <Welcome />}
-                {step === "mac" && <ThisMac />}
-                {step === "model" && <ModelStep settings={settings} />}
-                {step === "ai" && (
-                  <StepFrame title="Who writes the prompts?" body="Pick the AI that drives the studio. You can change this any time in Settings.">
-                    <AiConnect settings={settings} onChange={setSettings} />
-                  </StepFrame>
-                )}
-                {step === "project" && (
-                  <StepFrame title="Your first project" body="Start from the sample, an empty project, or a story you already have.">
-                    <NewProjectChoices draft={draft} onChange={(d) => { setDraft(d); setErr(null); }} />
-                  </StepFrame>
-                )}
-              </motion.div>
-            </AnimatePresence>
-          </div>
-
-          <div className="mt-10 flex items-center gap-2">
-            {i > 0 && (
-              <Button variant="ghost" icon={<ArrowLeft size={14} />} onClick={() => move(-1)}>
-                Back
-              </Button>
-            )}
-            {err && <p className="text-[12.5px] text-err">{err}</p>}
-            <div className="ml-auto flex items-center gap-2">
-              {step === "model" && (
-                <Button variant="ghost" onClick={() => move(1)}>
-                  Skip for now
-                </Button>
-              )}
-              <Button variant="primary" size="lg" loading={busy} trailing={step !== "project" ? <ArrowRight size={14} /> : undefined} onClick={() => void next()}>
-                {step === "welcome" ? "Get started" : step === "project" ? (draft.kind === "text" ? "Create and run" : "Open studio") : "Continue"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Set up Manga Studio"
+        className="h-[580px] max-h-full w-[880px] max-w-full rounded-[var(--radius-surface)] shadow-[var(--shadow-sheet)]"
+        initial={{ opacity: 0, transform: "scale(0.97)" }}
+        animate={{ opacity: 1, transform: "scale(1)" }}
+        exit={{ opacity: 0, transform: "scale(0.97)" }}
+        transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
+      >
+        {card}
+      </motion.div>
     </motion.div>
   );
 }
 
 function StepFrame({ title, body, children }: { title: string; body?: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <h1 className="type-display">{title}</h1>
+        <h1 className="type-hand text-[30px]">{title}</h1>
         {body && <p className="max-w-[52ch] text-[14px] leading-relaxed text-ink-2">{body}</p>}
       </div>
       {children}
@@ -191,9 +269,9 @@ function StepFrame({ title, body, children }: { title: string; body?: ReactNode;
 
 function Welcome() {
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
-        <h1 className="text-[34px] leading-[1.08] font-semibold tracking-[-0.028em] text-balance">Draw your story as manga, on this Mac.</h1>
+        <h1 className="type-hand text-[36px] text-balance">Draw your story as manga, on this Mac.</h1>
         <p className="max-w-[48ch] text-[15px] leading-relaxed text-ink-2">
           Write or paste a story, draw it locally with Qwen-Image, letter it and export. Nothing leaves this machine.
         </p>
@@ -205,7 +283,7 @@ function Welcome() {
           ["Your AI", "Claude Code, Codex or Ollama works alongside you through MCP."],
         ].map(([t, b]) => (
           <li key={t} className="flex gap-4 py-3">
-            <span className="w-20 shrink-0 text-[13.5px] font-semibold">{t}</span>
+            <span className="type-hand w-20 shrink-0 text-[16px] leading-[1.25]">{t}</span>
             <span className="text-[13.5px] text-ink-2">{b}</span>
           </li>
         ))}
