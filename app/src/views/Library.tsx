@@ -39,10 +39,10 @@ export function Library() {
       ) : stories.error && !stories.data ? (
         <Empty
           icon={<PlugsConnected size={20} />}
-          title="Can't reach the studio backend"
+          title="The image engine isn't running"
           body={
             <>
-              Start it with <code className="num">uv run studio serve</code> in the project folder. This page reconnects on its own.
+              Use Restart in the bar at the top. In a browser, start it with <code className="num">uv run studio serve</code>. This page reconnects on its own.
             </>
           }
           action={!connected ? undefined : <Button onClick={() => void stories.reload()}>Try again</Button>}

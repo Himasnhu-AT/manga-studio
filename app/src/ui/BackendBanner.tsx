@@ -76,10 +76,10 @@ export function BackendBanner() {
           <Spinner className="size-3" />
           <span>
             {slow
-              ? "The backend is taking a while. Its log is at "
+              ? "The image engine is taking a while to start. Its log is at "
               : status?.first_run
-                ? "First launch: installing the studio's Python packages. This takes a minute or two."
-                : "Starting the studio backend"}
+                ? "First launch: setting up the image engine. This takes a minute or two."
+                : "Starting the image engine"}
           </span>
           {slow && status && <code className="num selectable text-ink">{status.log}</code>}
         </>

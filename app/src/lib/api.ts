@@ -23,7 +23,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
       body: opts.form ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
     });
   } catch {
-    throw new ApiError(0, "The studio backend isn't reachable on 127.0.0.1:7860.");
+    throw new ApiError(0, "The image engine isn't running.");
   }
   if (!res.ok) {
     let msg = res.statusText;

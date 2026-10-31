@@ -276,7 +276,7 @@ function Start() {
           <div className="rounded-[14px] border border-line bg-paper p-6 sm:p-7">
             <h3 className="font-medium">Download the app</h3>
             <p className="mt-1 max-w-[60ch] text-[15px] text-ink-2">
-              Signed and notarized by Apple. Open the DMG and drag Manga Studio to Applications. The app runs its Python backend with{" "}
+              Signed and notarized by Apple. Open the DMG and drag Manga Studio to Applications. Its image engine runs on{" "}
               <a className="link underline decoration-line-2 underline-offset-4 hover:decoration-ink-3" href={DOWNLOAD.uv}>
                 <code className="font-mono text-[14px]">uv</code>
               </a>
@@ -293,19 +293,10 @@ function Start() {
           <div>
             <h3 className="font-medium">Or build it from source</h3>
             <p className="mt-1 text-[15px] text-ink-2">
-              From a clone of the repo, with <code className="font-mono text-[14px]">uv</code> and <code className="font-mono text-[14px]">pnpm</code>. The desktop app starts the backend for you.
+              From a clone of the repo, with <code className="font-mono text-[14px]">uv</code> and <code className="font-mono text-[14px]">pnpm</code>. The app sets up its image engine on first launch.
             </p>
             <div className="mt-4">
               <Command label="install and open the app" lines={["uv sync", "cd app && pnpm install", "pnpm tauri dev"]} />
-            </div>
-          </div>
-          <div>
-            <h3 className="font-medium">Or use it in a browser</h3>
-            <p className="mt-1 text-[15px] text-ink-2">
-              Build the UI once with <code className="font-mono text-[14px]">pnpm build</code> in <code className="font-mono text-[14px]">app/</code>, then open <span className="font-mono text-[14px]">http://127.0.0.1:7860</span>. Add <code className="font-mono text-[14px]">--mock</code> to draw placeholders without the model.
-            </p>
-            <div className="mt-4">
-              <Command label="start the backend" lines={["uv run studio serve"]} />
             </div>
           </div>
           <div>

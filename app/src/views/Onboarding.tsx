@@ -306,14 +306,14 @@ function BackendChecks() {
         label={b.uv ? "uv found" : "uv not found"}
         detail={
           b.uv ? (
-            "Runs the studio's Python backend."
+            "Runs the image engine on this Mac."
           ) : (
             <span className="flex flex-col gap-1.5">
-              The studio's backend runs on uv. Install it in Terminal, then restart the backend:
+              The image engine needs uv. Install it in Terminal, then restart the engine:
               <CopyBlock text={b.uv_install} />
               <span>
                 <Button size="sm" variant="ghost" onClick={() => void tauri("restart_backend").catch(() => {})}>
-                  Restart the backend
+                  Restart the engine
                 </Button>
               </span>
             </span>
@@ -324,7 +324,7 @@ function BackendChecks() {
         <CheckRow
           tone={b.error ? "err" : "neutral"}
           icon={b.error ? <WarningCircle size={18} /> : <Spinner className="size-[18px]" />}
-          label={b.error ? "The backend didn't start" : b.first_run ? "Installing the studio's Python packages" : "Starting the backend"}
+          label={b.error ? "The image engine didn't start" : b.first_run ? "Setting up the image engine" : "Starting the image engine"}
           detail={
             b.error ? (
               <span className="selectable">{b.error}</span>
