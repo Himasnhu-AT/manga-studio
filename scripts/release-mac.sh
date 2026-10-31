@@ -3,7 +3,7 @@
 #
 #   scripts/release-mac.sh              build + sign + notarize + staple (no tag, no upload)
 #   scripts/release-mac.sh --dry-run    checks + signed build + DMG, skips notarization and upload
-#   scripts/release-mac.sh --publish    the above, then tag vX.Y.Z, push the tag, create the GitHub release
+#   scripts/release-mac.sh --publish    the above, then create the GitHub release vX.Y.Z (and its tag) with the assets
 #
 # Options:
 #   --notes-file FILE   release notes (default: the "## [X.Y.Z]" section of CHANGELOG.md)
@@ -312,14 +312,16 @@ fi
 
 if [[ $PUBLISH -eq 1 ]]; then
   bold "Publish $TAG"
-  if [[ $CI_MODE -eq 0 ]]; then
-    git tag -a "$TAG" -m "Manga Studio $VERSION"
-    git push origin "$TAG"
-  fi
   if gh release view "$TAG" >/dev/null 2>&1; then
     gh release upload "$TAG" "${ASSETS[@]}" --clobber
-  else
+  elif [[ $CI_MODE -eq 1 ]]; then
     gh release create "$TAG" "${ASSETS[@]}" --verify-tag --title "Manga Studio $VERSION" --notes-file "$NOTES_TMP"
+  else
+    # gh creates the tag on origin at HEAD (== origin/main, checked above) only when it publishes
+    # the release, after the assets are uploaded. So the tag-triggered workflow finds the DMG
+    # already there and skips instead of building a second copy.
+    gh release create "$TAG" "${ASSETS[@]}" --target "$(git rev-parse HEAD)" --title "Manga Studio $VERSION" --notes-file "$NOTES_TMP"
+    git fetch -q origin "refs/tags/$TAG:refs/tags/$TAG"
   fi
   ok "released: $(gh release view "$TAG" --json url --jq .url)"
 elif [[ $DRY_RUN -eq 1 ]]; then
