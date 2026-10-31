@@ -163,7 +163,7 @@ def app_assets(path: str):
 
 @app.get("/api/status")
 def status():
-    return {"rev": _rev, **engine.status(), "queued": sum(j["status"] == "queued" for j in jobs.values())}
+    return {"rev": _rev, **engine.status(), "queued": sum(j["status"] == "queued" for j in list(jobs.values()))}
 
 
 @app.get("/api/stories")
@@ -292,7 +292,8 @@ def generate(req: GenReq):
 @app.get("/api/jobs")
 def list_jobs(story: str | None = None, active: bool = False):
     out = []
-    for j in sorted(jobs.values(), key=lambda j: j["id"], reverse=True):
+    for j in sorted(list(jobs.values()), key=lambda j: j["id"], reverse=True):
+        j = dict(j)
         if story and j["story"] != story:
             continue
         if active and j["status"] not in ("queued", "running"):
@@ -303,9 +304,10 @@ def list_jobs(story: str | None = None, active: bool = False):
 
 @app.get("/api/jobs/{jid}")
 def job(jid: int):
-    if jid not in jobs:
+    j = jobs.get(jid)
+    if j is None:
         raise HTTPException(404, "no such job")
-    return {k: v for k, v in jobs[jid].items() if k != "post"}
+    return {k: v for k, v in dict(j).items() if k != "post"}
 
 
 @app.delete("/api/jobs/{jid}")
