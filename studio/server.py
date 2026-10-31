@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from studio import appsvc, compose, export as exporter, lettering, project as pj, story as st
+from studio import appsvc, compose, export as exporter, imageedit, lettering, project as pj, story as st
 from studio.engine import make_engine
 
 DASHBOARD = Path(__file__).resolve().parent.parent / "dashboard" / "index.html"
@@ -788,6 +788,46 @@ def _inpaint_post(source_path: Path, mask):
     return post
 
 
+def _version_path(s: st.Story, pid: str, name: str | None) -> tuple[str, Path]:
+    """A version file of this panel by exact name (default: the one in use). Never a path."""
+    name = name or st.picked_version(s, pid)
+    if not name:
+        raise HTTPException(400, f"{pid} has no version yet; generate one first")
+    names = {v["file"] for v in st.versions(s, pid)}
+    if name not in names:
+        raise HTTPException(400, f"{name!r} is not a version of {pid}")
+    return name, s.dir / "out" / pid / name
+
+
+def queue_from_source(slug: str, pid: str, src: str, mode: str, prompt: str | None, strength: float, count: int, mask=None, meta: dict | None = None, fit_source: bool = False) -> tuple[list[int], list[int]]:
+    """img2img / inpaint jobs that start from one version. The panel's own blocks, cast and refs are kept
+    (the source goes in as image 1), so characters stay on model. `mask` (PIL L, white = repaint) makes it an
+    inpaint: only that region changes. `fit_source` renders at the source's size (crops, extends)."""
+    s = st.load(slug)
+    panel = s.panel(pid)
+    src_path = s.dir / "out" / pid / src
+    size = None
+    if fit_source:
+        from PIL import Image
+
+        with Image.open(src_path) as im:
+            f = max(1.0, 256 / min(im.size))  # tiny sources render at >= 256px, same aspect
+            size = (round(im.width * f / 16) * 16, round(im.height * f / 16) * 16)
+
+    def mutate(plan):
+        first = {"name": f"{pid}/{src}", "path": str(src_path), "version": src, "label": "the current panel, keep its composition and characters"}
+        refs = [first] + [r for r in plan["refs"] if r["path"] != str(src_path)]
+        plan["refs"] = refs[:10]
+        plan["prompt"] = _with_instruction(s.build_prompt(panel, plan["refs"]), prompt)
+        plan["strength"] = strength
+        if size:
+            plan["width"], plan["height"] = size
+        return plan
+
+    post = _inpaint_post(src_path, mask) if mask is not None else None
+    return enqueue(slug, pid, count=max(1, min(8, count)), plan_mutator=mutate, meta={"copilot": mode, "source": src, **(meta or {})}, post=post)
+
+
 @app.post("/api/stories/{slug}/panels/{pid}/copilot")
 def copilot(slug: str, pid: str, req: CopilotReq):
     s = _story(slug)
@@ -798,41 +838,238 @@ def copilot(slug: str, pid: str, req: CopilotReq):
     if req.mode not in ("txt2img", "img2img", "inpaint"):
         raise HTTPException(400, "mode must be txt2img, img2img or inpaint")
     count = max(1, min(8, req.count))
-    seeds = None
-    if req.mode == "txt2img" and count == 1:
-        seed = panel.get("seed") or next((s.cast[c].get("seed") for c in panel.get("cast") or [] if s.cast.get(c, {}).get("seed")), None)
-        seeds = [int(seed)] if seed else None
-    meta = {"copilot": req.mode}
-    post = None
     if req.mode == "txt2img":
+        seeds = None
+        if count == 1:
+            seed = panel.get("seed") or next((s.cast[c].get("seed") for c in panel.get("cast") or [] if s.cast.get(c, {}).get("seed")), None)
+            seeds = [int(seed)] if seed else None
+
         def mutate(plan):
             plan["prompt"] = _with_instruction(plan["prompt"], req.prompt)
             return plan
-    else:
-        src = req.source or st.picked_version(s, pid)
-        if not src or not (s.dir / "out" / pid / src).exists():
-            raise HTTPException(400, f"{pid} has no version to start from; generate one first")
-        src_path = s.dir / "out" / pid / src
-        meta["source"] = src
-        strength = req.strength if req.strength is not None else (0.6 if req.mode == "img2img" else 0.85)
 
-        def mutate(plan):
-            first = {"name": f"{pid}/{src}", "path": str(src_path), "version": src, "label": "the current panel, keep its composition and characters"}
-            refs = [first] + [r for r in plan["refs"] if r["path"] != str(src_path)]
-            plan["refs"] = refs[:10]
-            plan["prompt"] = _with_instruction(s.build_prompt(panel, plan["refs"]), req.prompt)
-            plan["strength"] = strength
-            return plan
-
-        if req.mode == "inpaint":
-            if not req.mask:
-                raise HTTPException(400, "inpaint needs a mask")
-            post = _inpaint_post(src_path, _decode_mask(req.mask))
+        try:
+            created, seeds = enqueue(slug, pid, seeds=seeds, count=count, plan_mutator=mutate, meta={"copilot": "txt2img"})
+        except st.StoryError as e:
+            raise HTTPException(400, str(e))
+        return {"jobs": created, "seeds": seeds}
+    src, _ = _version_path(s, pid, req.source)
+    strength = req.strength if req.strength is not None else (0.6 if req.mode == "img2img" else 0.85)
+    mask = None
+    if req.mode == "inpaint":
+        if not req.mask:
+            raise HTTPException(400, "inpaint needs a mask")
+        mask = _decode_mask(req.mask)
     try:
-        created, seeds = enqueue(slug, pid, seeds=seeds, count=count, plan_mutator=mutate, meta=meta, post=post)
+        created, seeds = queue_from_source(slug, pid, src, req.mode, req.prompt, strength, count, mask=mask)
     except st.StoryError as e:
         raise HTTPException(400, str(e))
     return {"jobs": created, "seeds": seeds}
+
+
+# ---- image editing (segment, rearrange, erase, fix, extend) -------------------------
+
+
+class SegmentReq(BaseModel):
+    file: str | None = None
+    point: list[float]
+    method: str = "auto"  # auto | vision | color
+    tolerance: float = 0.12
+    ops: list[dict] = []  # segment the image as these edits leave it
+
+
+class EditReq(BaseModel):
+    file: str | None = None
+    ops: list[dict]
+    preview: bool = False
+
+
+def _edit_panel_story(slug: str, pid: str) -> st.Story:
+    s = _story(slug)
+    if not any(p["id"] == pid for p in s.panels):
+        raise HTTPException(404, f"no panel {pid!r}")
+    return s
+
+
+def _mask_loader(s: st.Story, pid: str):
+    from PIL import Image
+
+    base = (s.dir / "out" / pid).resolve()
+
+    def load(rel: str):
+        p = (base / rel).resolve()
+        if not p.is_relative_to(base) or not p.is_file():
+            raise imageedit.EditError(f"no mask file {rel!r}")
+        return Image.open(p)
+
+    return load
+
+
+def _render(s: st.Story, pid: str, file: str | None, ops: list[dict]):
+    from PIL import Image
+
+    name, path = _version_path(s, pid, file)
+    key = f"{path}:{path.stat().st_mtime_ns}"
+    try:
+        ctx = imageedit.apply_ops(Image.open(path), ops, _mask_loader(s, pid), cache_key=key)
+    except imageedit.EditError as e:
+        raise HTTPException(400, str(e))
+    return name, path, ctx
+
+
+@app.post("/api/stories/{slug}/panels/{pid}/segment")
+def segment_panel(slug: str, pid: str, req: SegmentReq):
+    """Mask of the thing under `point` (fractions of the image). Apple Vision when available, else colour flood."""
+    import numpy as np
+
+    from studio import segment as seg
+
+    s = _edit_panel_story(slug, pid)
+    if len(req.point) != 2 or req.method not in ("auto", "vision", "color"):
+        raise HTTPException(400, "point is [x, y] fractions; method auto | vision | color")
+    pixel = [o for o in req.ops if isinstance(o, dict) and o.get("op") not in imageedit.MODEL_OPS]
+    name, path, ctx = _render(s, pid, req.file, pixel)
+    key = f"{path}:{path.stat().st_mtime_ns}:{json.dumps(pixel, sort_keys=True)}"
+    try:
+        r = seg.segment(ctx.img, (req.point[0], req.point[1]), req.method, req.tolerance, key=key)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    m = np.asarray(r["mask"]) > 127
+    return {
+        "file": name,
+        "mask": imageedit.encode_png(r["mask"]),
+        "method": r["method"],
+        "instance": r["instance"],
+        "instances": r["instances"],
+        "area": round(float(m.mean()), 4),
+        "size": list(ctx.size),
+        "vision": seg.vision_available(),
+    }
+
+
+def _save_mask(data: str, out_dir: Path, stem: str) -> str:
+    (out_dir / "masks").mkdir(exist_ok=True)
+    imageedit.decode_png(data).save(out_dir / "masks" / f"{stem}.png")
+    return f"masks/{stem}.png"
+
+
+def _record_ops(ops: list[dict], out_dir: Path, stem: str) -> list[dict]:
+    """Ops as stored in the version .json: inline PNG masks become files under out/<pid>/masks/, so the .json
+    stays small and the list replays exactly (`{"png": "masks/..."}` is a valid mask spec)."""
+    rec = []
+    for i, op in enumerate(ops):
+        op = dict(op)
+        if isinstance(op.get("png"), str) and op["png"].startswith("data:"):
+            op["png"] = _save_mask(op["png"], out_dir, f"{stem}-{i}")
+        m = op.get("mask")
+        if isinstance(m, str) and m.startswith("data:"):
+            op["mask"] = {"png": _save_mask(m, out_dir, f"{stem}-{i}")}
+        elif isinstance(m, dict) and isinstance(m.get("png"), str) and m["png"].startswith("data:"):
+            op["mask"] = dict(m, png=_save_mask(m["png"], out_dir, f"{stem}-{i}"))
+        rec.append(op)
+    return rec
+
+
+def _mask_meta(m) -> dict | None:
+    import numpy as np
+
+    ys, xs = np.nonzero(m)
+    if not len(xs):
+        return None
+    h, w = m.shape
+    return {"bbox": [round(xs.min() / w, 4), round(ys.min() / h, 4), round((xs.max() + 1 - xs.min()) / w, 4), round((ys.max() + 1 - ys.min()) / h, 4)], "area": round(float(m.mean()), 4)}
+
+
+@app.post("/api/stories/{slug}/panels/{pid}/edit")
+def edit_panel(slug: str, pid: str, req: EditReq):
+    """Apply edit ops to a version. Pixel ops (mask, move, erase, crop, rotate, flip, adjust, extend) run here and
+    save a NEW version (the source is never touched) whose .json records `edited_from` and the ops. A final
+    `fix` / `redraw` op, an `extend`, or an erase with fill "model" then queues model jobs from that result.
+    preview: true returns the rendered image without saving or queueing anything."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    s = _edit_panel_story(slug, pid)
+    ops = list(req.ops)
+    model_op = None
+    if ops and isinstance(ops[-1], dict) and ops[-1].get("op") in imageedit.MODEL_OPS:
+        model_op = ops.pop()
+    if any(isinstance(o, dict) and o.get("op") in imageedit.MODEL_OPS for o in ops):
+        raise HTTPException(400, "fix / redraw must be the last op")
+    name, path, ctx = _render(s, pid, req.file, ops)
+    if req.preview:
+        buf = io.BytesIO()
+        ctx.img.save(buf, "PNG", compress_level=1)
+        return {"file": name, "image": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode(), "size": list(ctx.size), "holes": bool(ctx.holes.any())}
+
+    if model_op is not None:  # validate before anything is written
+        prompt = (model_op.get("prompt") or "").strip()
+        if model_op["op"] == "fix" and not prompt:
+            raise HTTPException(400, "fix needs a prompt (what to change)")
+        redraw = model_op["op"] == "redraw"
+        strength = float(model_op.get("strength", 0.85 if redraw else 0.6))
+        if not 0.05 <= strength <= 1:
+            raise HTTPException(400, "strength is between 0.05 and 1")
+        try:
+            fix_mask = None if redraw else ctx.mask(model_op.get("mask"), required=False)
+        except imageedit.EditError as e:
+            raise HTTPException(400, str(e))
+        if fix_mask is not None and not fix_mask.any():
+            raise HTTPException(400, "the fix mask is empty; select something or leave mask out to rework the whole image")
+
+    if model_op is not None or ctx.holes.any():
+        try:  # a broken plan (missing ref) must fail before a half-done edit is saved
+            s.plan(pid, seed=0)
+        except st.StoryError as e:
+            raise HTTPException(400, str(e))
+
+    src_meta = next((v for v in st.versions(s, pid) if v["file"] == name), {})
+    seed = int(src_meta.get("seed") or 0)
+    out_dir = s.dir / "out" / pid
+    new_file = None
+    if ctx.changed:
+        out = st.next_version_name(s, pid, seed)
+        ctx.img.save(out)
+        meta = {
+            **{k: src_meta[k] for k in ("prompt", "refs", "model", "quantize", "steps") if k in src_meta},
+            "seed": seed,
+            "width": ctx.size[0],
+            "height": ctx.size[1],
+            "edited_from": name,
+            "ops": _record_ops(ops, out_dir, out.stem),
+            "engine": "edit",
+            "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        out.with_suffix(".json").write_text(json.dumps(meta, indent=2))
+        new_file = out.name
+    source = new_file or name
+
+    jobs_out: list[int] = []
+    seeds_out: list[int] = []
+    holes = ctx.holes
+    try:
+        if model_op is not None:
+            if fix_mask is not None or holes.any():
+                region = (fix_mask if fix_mask is not None else np.zeros_like(holes)) | holes
+                grow = max(3, round(ctx.size[0] * float(model_op.get("grow", 0.015))))
+                mask = Image.fromarray(np.where(region, 255, 0).astype(np.uint8)).filter(ImageFilter.MaxFilter(grow * 2 + 1))
+                if fix_mask is None:  # only new canvas / erased holes to paint: needs a strong pass
+                    strength = max(strength, 0.85)
+                mode, meta = "inpaint", {"mask": _mask_meta(region)}
+            else:
+                mask, mode, meta = None, "img2img", {}
+            meta |= {"edited_from": name, "op": model_op["op"], "fix": prompt or None, "strength": strength}
+            jobs_out, seeds_out = queue_from_source(slug, pid, source, mode, prompt or None, strength, int(model_op.get("count", 2)), mask=mask, meta=meta, fit_source=True)
+        elif holes.any():  # extend / erase with fill "model": repaint the holes
+            src_op = next((o for o in reversed(ops) if o.get("op") in ("extend", "erase", "move")), {})
+            prompt = src_op.get("prompt") or "continue the scene naturally into this area, same style and lighting, nothing new"
+            mask = Image.fromarray(np.where(holes, 255, 0).astype(np.uint8)).filter(ImageFilter.MaxFilter(7))
+            meta = {"edited_from": name, "op": src_op.get("op", "fill"), "fix": prompt, "strength": 0.9, "mask": _mask_meta(holes)}
+            jobs_out, seeds_out = queue_from_source(slug, pid, source, "inpaint", prompt, 0.9, int(src_op.get("count", 2)), mask=mask, meta=meta, fit_source=True)
+    except st.StoryError as e:
+        raise HTTPException(400, str(e))
+    bump()
+    return {"file": new_file, "source": source, "edited_from": name, "jobs": jobs_out, "seeds": seeds_out, "size": list(ctx.size)}
 
 
 # ---- lettering + export ----------------------------------------------------------
