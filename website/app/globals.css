@@ -119,7 +119,13 @@ body {
 
 /* The vermilion underline used once per heading for emphasis. */
 .mark {
-  background-image: linear-gradient(transparent 70%, var(--color-accent-wash) 70%, var(--color-accent-wash) 92%, transparent 92%);
+  background-image: linear-gradient(transparent 56%, var(--color-accent-wash) 56%, var(--color-accent-wash) 84%, transparent 84%);
+  white-space: nowrap;
+}
+
+/* The share card renders the hero figure without its hover hint. */
+.og-card .iso-plate-corner[data-corner="hint"] {
+  display: none;
 }
 
 /* Copy button: the two icons cross-fade in place. */

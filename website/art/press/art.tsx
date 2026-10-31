@@ -1,7 +1,7 @@
 // Server component: the static parts of the hero figure as JSX, handed to the live component as element props.
 import * as React from "react";
 import { Dots, FaceText, Line, Solid } from "../kit/react/draw";
-import { BASE_ART, BED, BUBBLE_ART, GANTRY, HEAD, PANEL_ART, RAILS, TRAYS } from "./geometry";
+import { BASE_ART, BED, CAST, INK_BOTTLE, BUBBLE_ART, GANTRY, HEAD, PANEL_ART, RAILS, TRAYS } from "./geometry";
 import { PressLive } from "./live";
 
 const BASE = (
@@ -86,6 +86,34 @@ function trayArt(tray: (typeof TRAYS)["in"] | (typeof TRAYS)["out"], extra: Reac
   );
 }
 
+const CAST_CARDS = (
+  <g key="cast">
+    <path className="iso-halo" d={CAST.halo} />
+    <Solid paths={CAST.block} tone="mid" />
+    <Line d={CAST.slot} tone="lo" />
+    <Dots points={CAST.screws} size={0.42} tone="mid" />
+    {CAST.cards.map((card, index) => (
+      <g key={index}>
+        <Solid paths={card.body} tone="hi" crease="none" />
+        <Line d={card.heads} tone="mid" />
+        <Line d={card.bodies} tone="mid" />
+        <Line d={card.rules} tone="lo" free />
+      </g>
+    ))}
+  </g>
+);
+
+const INK = (
+  <g key="ink">
+    <path className="iso-halo" d={INK_BOTTLE.halo} style={{ filter: "blur(4px)" }} />
+    <Solid paths={INK_BOTTLE.body} tone="mid" />
+    <Line d={INK_BOTTLE.label} tone="faint" />
+    <Solid paths={INK_BOTTLE.shoulder} tone="mid" />
+    <Solid paths={INK_BOTTLE.cap} tone="hi" />
+    <Line d={INK_BOTTLE.knurl} tone="lo" />
+  </g>
+);
+
 const FAR_RAIL = railArt(RAILS.far, "far-rail");
 const NEAR_RAIL = railArt(RAILS.near, "near-rail");
 const FAR_GANTRY = carriageArt(GANTRY.far, "far-gantry");
@@ -169,6 +197,8 @@ export function PressArt() {
       base={BASE}
       farRail={FAR_RAIL}
       farGantry={FAR_GANTRY}
+      cast={CAST_CARDS}
+      ink={INK}
       trayIn={TRAY_IN}
       bedUnder={BED_UNDER}
       borders={BORDERS}

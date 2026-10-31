@@ -17,7 +17,7 @@ function Mark() {
 function Nav() {
   return (
     <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/90 backdrop-blur-md">
-      <nav className="mx-auto flex h-16 max-w-[1180px] items-center justify-between gap-6 px-5 sm:px-8" aria-label="Main">
+      <nav className="mx-auto flex h-16 max-w-[1240px] items-center justify-between gap-6 px-5 sm:px-8" aria-label="Main">
         <a href="#top" className="flex items-center gap-2.5" aria-label="Manga Studio, back to top">
           <Mark />
           <span className="hand text-[21px] leading-none">Manga Studio</span>
@@ -51,12 +51,14 @@ function Nav() {
 
 function Hero() {
   return (
-    <section id="top" className="mx-auto grid max-w-[1180px] items-center gap-10 px-5 pt-10 pb-16 sm:px-8 md:pt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-12 lg:pt-20 lg:pb-24">
-      <div className="max-w-[520px]">
-        <h1 className="hand rise text-[44px] leading-[1.08] text-balance sm:text-[56px]">
-          Draw your story as manga, <span className="mark">on your Mac</span>.
-        </h1>
-        <p className="rise mt-5 max-w-[42ch] text-[18px] leading-[1.6] text-ink-2" style={{ ["--rise-delay" as string]: "60ms" }}>
+    <section id="top" className="mx-auto max-w-[1240px] px-5 pt-10 pb-16 sm:px-8 md:pt-14 lg:pb-24">
+      <h1 className="hand rise max-w-[15ch] text-[44px] leading-[1.06] text-balance sm:text-[60px] lg:max-w-none lg:text-[68px]">
+        Draw your story as manga,
+        <br className="hidden lg:block" /> <span className="mark">on your Mac</span>.
+      </h1>
+      <div className="mt-8 grid items-center gap-10 lg:mt-10 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] lg:gap-12">
+      <div className="max-w-[440px] lg:pb-16">
+        <p className="rise max-w-[40ch] text-[18px] leading-[1.6] text-ink-2" style={{ ["--rise-delay" as string]: "60ms" }}>
           Paste a story. Qwen-Image draws the panels on your Mac, you letter and export. Nothing leaves the machine.
         </p>
         <div className="rise mt-8 flex flex-wrap gap-3" style={{ ["--rise-delay" as string]: "120ms" }}>
@@ -70,6 +72,7 @@ function Hero() {
       </div>
       <div className="rise min-w-0" style={{ ["--rise-delay" as string]: "80ms" }}>
         <PressFigure />
+      </div>
       </div>
     </section>
   );
@@ -85,19 +88,19 @@ function Bullet({ children }: { children: React.ReactNode }) {
 }
 
 function Make() {
-  const studioArt = hasIllo("project");
-  const pipeArt = hasIllo("welcome");
+  const studioArt = hasIllo("welcome");
+  const pipeArt = hasIllo("project");
   return (
     <section id="make" className="border-t border-line bg-canvas">
-      <div className="mx-auto max-w-[1180px] px-5 py-20 sm:px-8 md:py-28">
-        <h2 className="hand max-w-[18ch] text-[36px] leading-[1.1] sm:text-[44px]">Two ways to make a story</h2>
+      <div className="mx-auto max-w-[1240px] px-5 py-20 sm:px-8 md:py-28">
+        <h2 className="hand text-balance max-w-[18ch] text-[36px] leading-[1.1] sm:text-[44px]">Two ways to make a story</h2>
         <p className="mt-4 max-w-[58ch] text-[17px] text-ink-2">Draw it panel by panel, or hand over a chapter and fix what you want after. Both write the same project files.</p>
 
         <div className="mt-12 grid gap-5 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
           <article id="studio" className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-paper">
             {studioArt ? (
               <div className="border-b border-line px-8 pt-6">
-                <Illo name="project" className="mx-auto max-w-[400px]" />
+                <Illo name="welcome" className="mx-auto max-w-[400px]" />
               </div>
             ) : null}
             <div className="p-7 sm:p-9">
@@ -116,7 +119,7 @@ function Make() {
           <article id="pipeline" className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-paper">
             {pipeArt ? (
               <div className="border-b border-line px-8 pt-6">
-                <Illo name="welcome" className="mx-auto max-w-[360px]" />
+                <Illo name="project" className="mx-auto max-w-[360px]" />
               </div>
             ) : null}
             <div className="flex flex-1 flex-col p-7 sm:p-9">
@@ -147,8 +150,8 @@ function Make() {
 function ReadExport() {
   return (
     <section id="export" className="border-t border-line">
-      <div className="mx-auto grid max-w-[1180px] gap-10 px-5 py-20 sm:px-8 md:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] md:py-24">
-        <h2 className="hand text-[36px] leading-[1.1] sm:text-[44px]">Read it, then print it</h2>
+      <div className="mx-auto grid max-w-[1240px] gap-10 px-5 py-20 sm:px-8 md:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] md:py-24">
+        <h2 className="hand text-balance text-[36px] leading-[1.1] sm:text-[44px]">Read it, then print it</h2>
         <dl className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
           <div className="border-t border-ink pt-4">
             <dt className="font-medium">Reader</dt>
@@ -176,16 +179,16 @@ function Agents() {
   const art = hasIllo("ai");
   return (
     <section id="agents" className="border-t border-line bg-canvas">
-      <div className={`mx-auto grid max-w-[1180px] items-center gap-12 px-5 py-20 sm:px-8 md:py-28 ${art ? "lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]" : ""}`}>
+      <div className={`mx-auto grid max-w-[1240px] items-center gap-12 px-5 py-20 sm:px-8 md:py-28 ${art ? "lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]" : ""}`}>
         {art ? <Illo name="ai" className="mx-auto max-w-[460px]" /> : null}
         <div className="min-w-0">
-          <h2 className="hand max-w-[16ch] text-[36px] leading-[1.1] sm:text-[44px]">Let your AI hold the pen</h2>
+          <h2 className="hand text-balance max-w-[16ch] text-[36px] leading-[1.1] sm:text-[44px]">Let your AI hold the pen</h2>
           <p className="mt-4 max-w-[54ch] text-[17px] text-ink-2">
             Claude Code, Codex or any MCP client drives the studio through 24 tools: it writes prompts, draws panels, reads your notes and runs pipeline stages. You pick and star in the app.
           </p>
-          <figure className="mt-8 max-w-[440px]">
+          <figure className="mt-8 max-w-[480px]">
             <blockquote className="relative rounded-[22px] border-[1.5px] border-ink bg-paper px-5 py-3.5 text-[16px] leading-snug">
-              <span className="hand text-[19px] font-normal">“make the character sheet for cheek-squish, 4 seeds”</span>
+              <span className="hand block text-[19px] font-normal text-balance">“make the character sheet for cheek-squish, 4 seeds”</span>
               <span aria-hidden="true" className="absolute -bottom-[9px] left-9 size-4 rotate-45 border-r-[1.5px] border-b-[1.5px] border-ink bg-paper" />
             </blockquote>
             <figcaption className="mt-4 pl-1 text-[13.5px] text-ink-3">An example request from the README.</figcaption>
@@ -212,10 +215,10 @@ function Requirements() {
   const art = hasIllo("mac") || hasIllo("model");
   return (
     <section id="mac" className="border-t border-line">
-      <div className={`mx-auto grid max-w-[1180px] items-center gap-12 px-5 py-20 sm:px-8 md:py-28 ${art ? "lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]" : ""}`}>
+      <div className={`mx-auto grid max-w-[1240px] items-center gap-12 px-5 py-20 sm:px-8 md:py-28 ${art ? "lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]" : ""}`}>
         <div className="min-w-0">
-          <h2 className="hand max-w-[18ch] text-[36px] leading-[1.1] sm:text-[44px]">Runs on the Mac in front of you</h2>
-          <p className="mt-4 max-w-[56ch] text-[17px] text-ink-2">Qwen-Image 2.1 draws every panel locally through mflux and MLX, kept loaded between jobs. No account, no upload, no queue but your own.</p>
+          <h2 className="hand text-balance max-w-[18ch] text-[36px] leading-[1.1] sm:text-[44px]">Runs on the Mac in front of you</h2>
+          <p className="mt-4 max-w-[56ch] text-[17px] text-ink-2">Qwen-Image 2.1 draws every panel locally through mflux and MLX, kept loaded between jobs. No account and no upload.</p>
           <dl className="mt-10 grid gap-x-8 gap-y-7 sm:grid-cols-2">
             {SPECS.map((spec) => (
               <div key={spec.k}>
@@ -240,7 +243,7 @@ function Start() {
   return (
     <section id="start" className="border-t border-line bg-canvas">
       <div className="mx-auto max-w-[860px] px-5 py-20 sm:px-8 md:py-28">
-        <h2 className="hand text-[36px] leading-[1.1] sm:text-[44px]">Get started</h2>
+        <h2 className="hand text-balance text-[36px] leading-[1.1] sm:text-[44px]">Get started</h2>
         <p className="mt-4 max-w-[58ch] text-[17px] text-ink-2">
           You need <code className="font-mono text-[15px]">uv</code> and <code className="font-mono text-[15px]">pnpm</code>. The first launch checks the Mac, downloads the model if it isn&apos;t cached, connects an AI and creates a first project.
         </p>
@@ -278,7 +281,7 @@ function Start() {
 function Footer() {
   return (
     <footer className="border-t border-line">
-      <div className="mx-auto flex max-w-[1180px] flex-col gap-6 px-5 py-10 text-[14px] text-ink-2 sm:px-8 md:flex-row md:items-start md:justify-between">
+      <div className="mx-auto flex max-w-[1240px] flex-col gap-6 px-5 py-10 text-[14px] text-ink-2 sm:px-8 md:flex-row md:items-start md:justify-between">
         <div className="flex items-center gap-2.5">
           <Mark />
           <span className="hand text-[19px] leading-none text-ink">Manga Studio</span>

@@ -118,7 +118,7 @@ export function poseAt(clock: number): Pose {
   if (t < T.script) return { ...base, ...IN_TRAY, lift: 1, stage: "analysis", step: 0, of: 0 };
   if (t < T.layout) {
     const share = (t - T.script) / (T.layout - T.script);
-    const hy = -22 + 44 * smooth(share * 1.15);
+    const hy = -34 + 68 * smooth(share * 1.15);
     return { ...base, gx: IN_TRAY.gx, hy, lift: 1, stage: "script", step: 0, of: 0 };
   }
   if (t < T.artwork) {

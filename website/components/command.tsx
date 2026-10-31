@@ -28,10 +28,10 @@ export function Command({ lines, label }: { lines: string[]; label: string }) {
 
   return (
     <div className="group relative rounded-[14px] border border-line bg-paper">
-      <pre className="overflow-x-auto px-4 py-3.5 pr-14 font-mono text-[13px] leading-[1.75] text-ink">
+      <pre className="overflow-x-auto px-4 py-3.5 pr-14 font-mono whitespace-pre-wrap [overflow-wrap:anywhere] text-[13px] leading-[1.75] text-ink">
         <code>
           {lines.map((line, index) => (
-            <span key={index} className={`block ${line.trimStart().startsWith("#") ? "text-ink-3" : ""}`}>
+            <span key={index} className={`block pl-[2ch] -indent-[2ch] ${line.trimStart().startsWith("#") ? "text-ink-3" : ""}`}>
               {line.trimStart().startsWith("#") ? line : <><span className="select-none text-ink-3">$ </span>{line}</>}
             </span>
           ))}

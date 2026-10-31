@@ -29,6 +29,7 @@ import {
   CAR,
   CAR_H,
   FOOT_H,
+  HOLDER_BLOCK,
   HOLDER_H,
   HOLDER_Z,
   NIB,
@@ -341,6 +342,52 @@ const finishedGrid = (() => {
 export const TRAYS = {
   in: { ...trayIn, text: textLines },
   out: { ...trayOut, grid: finishedGrid },
+};
+
+// ---------------------------------------------------------------- cast cards: two reference sheets standing in a slotted block
+const CARD_Y = HOLDER_BLOCK.y + HOLDER_BLOCK.d / 2;
+const CARD_H = 30;
+const BLOCK_H = 6;
+function cardOf(x0: number, x1: number) {
+  const front = CARD_Y + 0.7;
+  const plan: Plan = { x: x0, y: CARD_Y - 0.7, w: x1 - x0, d: 1.4, r: 0.3 };
+  const cx = (x0 + x1) / 2;
+  const face = (cx0: number, cz: number, r: number) => pathOf(Array.from({ length: 24 }, (_, i) => {
+    const a = (i / 24) * Math.PI * 2;
+    return iso([cx0 + Math.cos(a) * r, front, cz + Math.sin(a) * r * 1.1], P);
+  }), true);
+  const top = BLOCK_H - 2 + CARD_H;
+  const heads = [face(cx - 4.2, top - 9, 2.6), face(cx + 4.2, top - 9, 2.6)].join("");
+  const bodies = [cx - 4.2, cx + 4.2]
+    .map((hx) => {
+      const pts: Flat[] = [];
+      for (let i = 0; i <= 10; i++) {
+        const a = Math.PI * (i / 10);
+        pts.push(iso([hx + Math.cos(a) * 3.8, front, top - 17 + Math.sin(a) * 4.2], P));
+      }
+      return pathOf(pts, true);
+    })
+    .join("");
+  const rules = [top - 21, top - 23.5].map((z, i) => pathOf([iso([x0 + 2.5, front, z], P), iso([x1 - (i ? 7 : 2.5), front, z], P)])).join("");
+  return { body: slabOf(plan, BLOCK_H - 2, CARD_H, P, 2), heads, bodies, rules };
+}
+export const CAST = {
+  halo: haloOf(insetPlan(HOLDER_BLOCK, 1), 0, 1, P),
+  block: slabOf(HOLDER_BLOCK, 0, BLOCK_H, P, 4, 0.6),
+  slot: lineOnTop([HOLDER_BLOCK.x + 3, CARD_Y], [HOLDER_BLOCK.x + HOLDER_BLOCK.w - 3, CARD_Y], BLOCK_H, P),
+  screws: [at([HOLDER_BLOCK.x + 2.2, HOLDER_BLOCK.y + HOLDER_BLOCK.d - 2.4, BLOCK_H]), at([HOLDER_BLOCK.x + HOLDER_BLOCK.w - 2.2, HOLDER_BLOCK.y + HOLDER_BLOCK.d - 2.4, BLOCK_H])],
+  cards: [cardOf(HOLDER_BLOCK.x + 4, HOLDER_BLOCK.x + 26), cardOf(HOLDER_BLOCK.x + 30, HOLDER_BLOCK.x + 52)],
+};
+
+// ---------------------------------------------------------------- ink bottle beside the story tray
+const INK: [number, number] = [-128, 82];
+export const INK_BOTTLE = {
+  halo: haloOf({ x: INK[0] - 9, y: INK[1] - 9, w: 18, d: 18, r: 9 }, 0, 1, P),
+  body: cylinder(INK[0], INK[1], 9, 0, 11, P, 40, 0.8),
+  label: sideArc(INK[0], INK[1], 9, 4, P, 24) + sideArc(INK[0], INK[1], 9, 8, P, 24),
+  shoulder: cylinder(INK[0], INK[1], 5.5, 11, 2, P, 32, 0.4),
+  cap: cylinder(INK[0], INK[1], 4.6, 13, 5, P, 28, 0.4),
+  knurl: knurl(INK[0], INK[1], 4.6, 13, 18, 24, P),
 };
 
 // ---------------------------------------------------------------- gantry (built at gx = 0, moved with a transform)

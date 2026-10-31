@@ -3,7 +3,7 @@
 import { fitProjection, iso, type Flat, type Plan, type Point3 } from "../kit/iso-kit";
 
 export const WIDTH = 640;
-export const HEIGHT = 440;
+export const HEIGHT = 372;
 export const AZIMUTH = 50;
 
 export const BASE: Plan = { x: -178, y: -128, w: 356, d: 256, r: 10 };
@@ -23,8 +23,10 @@ export const PLATEN_H = 8;
 export const PAGE: Plan = { x: -54, y: -76, w: 108, d: 152, r: 0.6 };
 export const PAGE_TOP = PLATEN_H + 0.8;
 
-export const TRAY_IN: Plan = { x: -156, y: -38, w: 56, d: 76, r: 3 };
-export const TRAY_OUT: Plan = { x: 100, y: -38, w: 56, d: 76, r: 3 };
+export const TRAY_IN: Plan = { x: -158, y: -46, w: 62, d: 104, r: 3 };
+export const TRAY_OUT: Plan = { x: 96, y: -54, w: 62, d: 108, r: 3 };
+// A holder with two character reference cards standing in it, behind the story tray.
+export const HOLDER_BLOCK: Plan = { x: -156, y: -92, w: 56, d: 12, r: 2 };
 export const TRAY_FLOOR = 2;
 export const TRAY_WALL = 2;
 export const TRAY_H = 8;
@@ -63,7 +65,7 @@ for (const gx of [GX_MIN, GX_MAX]) {
   reach.push([gx + PEN_DX, -HEAD_Y, PEN_TOP + LIFT + 2]);
 }
 
-export const P = fitProjection(reach, WIDTH, HEIGHT, { pad: 26, azimuth: AZIMUTH });
+export const P = fitProjection(reach, WIDTH, HEIGHT, { pad: 12, azimuth: AZIMUTH });
 export const at = (point: Point3): Flat => iso(point, P);
 
 // Page coordinates: u runs from the reader's left edge to the right edge, v from the top edge to the bottom.

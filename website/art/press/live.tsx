@@ -12,6 +12,8 @@ interface Props {
   base: React.ReactNode;
   farRail: React.ReactNode;
   farGantry: React.ReactNode;
+  cast: React.ReactNode;
+  ink: React.ReactNode;
   trayIn: React.ReactNode;
   bedUnder: React.ReactNode;
   borders: React.ReactNode[];
@@ -226,7 +228,9 @@ export function PressLive(props: Props) {
           <g ref={far} transform={restMove}>
             {props.farGantry}
           </g>
+          {props.cast}
           {props.trayIn}
+          {props.ink}
           {props.bedUnder}
           {props.arts.map((node, index) => (
             <g key={`a${index}`} ref={(el) => void (artRefs.current[index] = el)}>
