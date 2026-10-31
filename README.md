@@ -4,7 +4,15 @@
 [![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
 
 **[mangastudio.marlstudio.com](https://mangastudio.marlstudio.com)** ·
-[Download for Mac](https://github.com/Himasnhu-AT/manga-studio/releases/latest) (Apple Silicon)
+[Download for Mac](https://github.com/Himasnhu-AT/manga-studio/releases/latest/download/Manga-Studio-macOS-arm64.dmg) (Apple Silicon, notarized)
+
+<p align="center">
+  <img src="docs/media/page-1.jpg" width="32%" alt="Page 1: a father squeezes his daughter's cheeks while his wife pouts">
+  <img src="docs/media/page-2.jpg" width="32%" alt="Page 2: the wife asks for the same, and he squeezes her cheeks, embarrassed">
+  <img src="docs/media/page-3.jpg" width="32%" alt="Page 3: the daughter comes back with candy and giggles">
+</p>
+<p align="center"><sub>Three pages from a one-paragraph brief, drawn on a 24 GB MacBook and driven by Claude Code over MCP.
+<a href="https://mangastudio.marlstudio.com/#example">Watch it as a video</a>.</sub></p>
 
 A local manga/webtoon studio for Apple Silicon. Write or paste a story, draw it with
 **Qwen-Image-2.1 running on your Mac** (mflux / MLX), letter it with vector bubbles, read it, export it.

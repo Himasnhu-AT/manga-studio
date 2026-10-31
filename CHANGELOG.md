@@ -38,7 +38,7 @@ Developer ID and notarized by Apple.
 - Language stages run on your agent, a local Ollama model or a no-LLM heuristic.
 
 ### Agents
-- MCP bridge (`studio mcp`) with 24 tools for Claude Code, Codex or any MCP client.
+- MCP bridge (`studio mcp`) with 26 tools for Claude Code, Codex or any MCP client.
 
 ### Export
 - Print PDF (B5 or A5 with bleed and margins, or digital), layered SVG per page, PNG pages or
