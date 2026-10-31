@@ -179,14 +179,15 @@ export function ActionBar({ onLetter, letterBusy, onCast, onExport, castCount }:
   const { inspector, setInspector } = useStudio();
   return (
     <div className="material pointer-events-auto flex items-center gap-0.5 rounded-[var(--radius-surface)] border border-line p-1 shadow-[var(--shadow-float)]">
-      <Button size="sm" variant="ghost" icon={<ChatText size={15} />} loading={letterBusy} onClick={onLetter} title="Place speech bubbles away from faces">
-        Auto-letter
+      <Button size="sm" variant="ghost" icon={<ChatText size={15} />} loading={letterBusy} onClick={onLetter} title="Auto-letter: place speech bubbles away from faces">
+        <span className="@max-[980px]:hidden">Auto-letter</span>
       </Button>
-      <Button size="sm" variant="ghost" icon={<UsersThree size={15} />} onClick={onCast}>
-        Cast{castCount ? <span className="num text-ink-3">{castCount}</span> : null}
+      <Button size="sm" variant="ghost" icon={<UsersThree size={15} />} onClick={onCast} title="Cast">
+        <span className="@max-[980px]:hidden">Cast</span>
+        {castCount ? <span className="num text-ink-3">{castCount}</span> : null}
       </Button>
-      <Button size="sm" variant="ghost" icon={<Export size={15} />} onClick={onExport}>
-        Export
+      <Button size="sm" variant="ghost" icon={<Export size={15} />} onClick={onExport} title="Export">
+        <span className="@max-[980px]:hidden">Export</span>
       </Button>
       <Divider />
       <IconButton label={inspector ? "Hide inspector" : "Show inspector"} active={inspector} onClick={() => setInspector(!inspector)}>

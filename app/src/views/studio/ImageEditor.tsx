@@ -38,7 +38,7 @@ import { Lettering } from "../../ui/PanelView";
 import { Button, Empty, IconButton, Kbd, Progress, Segmented, Spinner, cx, spring } from "../../ui/kit";
 import { COMMANDS, parseCommand, type Side } from "./editCommands";
 import * as S from "./editSelection";
-import { Divider, ModeSwitch } from "./Toolbar";
+import { ModeSwitch } from "./Toolbar";
 import { useStudio } from "./studioState";
 
 type Tool = "select" | "lasso" | "brush" | "move" | "crop";
@@ -72,8 +72,8 @@ const STRENGTHS = [
 ];
 const TINT = "rgb(210 69 47 / 0.28)";
 const EDGE = "rgb(210 69 47 / 0.95)";
-const PAD_X = 40;
-const TOP = 116; // toolbar + context bar
+const PAD_X = 64; // room for the tool rail
+const TOP = 108; // mode row + context bar
 const BOTTOM = 132; // fix bar
 
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
@@ -821,11 +821,8 @@ function Editor({ story, panel, pageMode, file: startFile }: { story: StoryDetai
       )}
 
       {/* ---- top: toolbar + context ------------------------------------------------------------ */}
-      <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-col items-start gap-2">
-        <div className="flex w-full items-start justify-between gap-3">
-          <div className="material pointer-events-auto flex items-center gap-0.5 rounded-[var(--radius-surface)] border border-line p-1 shadow-[var(--shadow-float)]">
-            <ModeSwitch pageMode={pageMode} canEdit />
-            <Divider />
+      {/* ---- left: tools ----------------------------------------------------------------------- */}
+      <div className="material absolute top-1/2 left-3 z-10 flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-[var(--radius-surface)] border border-line p-1 shadow-[var(--shadow-float)]">
             <ToolBtn on={tool === "select"} label="Select object (W)" onClick={() => setTool("select")} disabled={!editing}>
               <MagicWand size={16} />
             </ToolBtn>
@@ -841,7 +838,7 @@ function Editor({ story, panel, pageMode, file: startFile }: { story: StoryDetai
             <ToolBtn on={tool === "crop"} label="Crop (C)" onClick={() => setTool("crop")} disabled={!editing}>
               <Crop size={16} />
             </ToolBtn>
-            <Divider />
+            <span className="my-1 h-px w-5 bg-line" />
             <IconButton label="Rotate 90°" onClick={() => rotate(90)} disabled={!editing}>
               <ArrowClockwise size={16} />
             </IconButton>
@@ -855,7 +852,7 @@ function Editor({ story, panel, pageMode, file: startFile }: { story: StoryDetai
               <SlidersHorizontal size={16} />
             </IconButton>
             <ExtendMenu disabled={!editing} onExtend={(side, amt) => extend(side, amt, text.startsWith("/") ? "" : text.trim())} />
-            <Divider />
+            <span className="my-1 h-px w-5 bg-line" />
             <IconButton label="Undo (⌘Z)" onClick={undo} disabled={!editing || !past.current.length}>
               <ArrowUUpLeft size={16} />
             </IconButton>
@@ -865,8 +862,14 @@ function Editor({ story, panel, pageMode, file: startFile }: { story: StoryDetai
             <IconButton label={showLetters ? "Hide bubbles" : "Show bubbles"} active={!showLetters} onClick={() => setShowLetters((v) => !v)}>
               {showLetters ? <Eye size={16} /> : <EyeSlash size={16} />}
             </IconButton>
+      </div>
+
+      <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-col items-start gap-2">
+        <div className="flex w-full items-start justify-between gap-3">
+          <div className="material pointer-events-auto flex items-center gap-0.5 rounded-[var(--radius-surface)] border border-line p-1 shadow-[var(--shadow-float)]">
+            <ModeSwitch pageMode={pageMode} canEdit />
           </div>
-          <div className="material pointer-events-auto flex items-center gap-1 rounded-[var(--radius-surface)] border border-line p-1 shadow-[var(--shadow-float)]">
+          <div className="material pointer-events-auto flex items-center gap-1 rounded-[var(--radius-surface)] border border-line p-1 whitespace-nowrap shadow-[var(--shadow-float)]">
             {rendering && <Spinner className="mx-1.5 text-ink-3" />}
             <span className="num px-1.5 text-[12px] text-ink-2" title="The version these edits start from">
               {panel.id} · {file.split("-")[0]}
@@ -881,6 +884,7 @@ function Editor({ story, panel, pageMode, file: startFile }: { story: StoryDetai
         </div>
 
         {editing && (
+          <div className="pl-12">
           <ContextBar>
             {adj ? (
               <>
@@ -973,6 +977,7 @@ function Editor({ story, panel, pageMode, file: startFile }: { story: StoryDetai
             )}
             {notice && <span className="text-[12.5px] text-warn">{notice}</span>}
           </ContextBar>
+          </div>
         )}
       </div>
 
@@ -1073,6 +1078,7 @@ function Editor({ story, panel, pageMode, file: startFile }: { story: StoryDetai
                     placeholder={placeholder}
                     aria-label="Describe a fix or type a command"
                     className="h-9 min-w-0 flex-1 bg-transparent px-1 text-[14px] text-ink outline-none placeholder:text-ink-3"
+                    style={{ outline: "none" }}
                   />
                   <Segmented size="sm" value={strength} onChange={setStrength} options={STRENGTHS} />
                   <Segmented size="sm" value={String(count)} onChange={(v) => setCount(Number(v))} options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: <span className="num">{n}</span>, title: `${n} version${n > 1 ? "s" : ""}` }))} />
@@ -1157,7 +1163,7 @@ function Handle({ style, cursor, onDown, round }: { style: React.CSSProperties; 
 
 function CropFrame({ c }: { c: Box }) {
   return (
-    <div className="pointer-events-none absolute inset-0">
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <div className="absolute border border-paper shadow-[0_0_0_9999px_rgb(23_23_26/0.45)]" style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%`, width: `${c.w * 100}%`, height: `${c.h * 100}%` }}>
         <div className="absolute inset-0 border border-dashed border-ink/50" />
       </div>
@@ -1253,8 +1259,8 @@ function ExtendMenu({ disabled, onExtend }: { disabled: boolean; onExtend: (side
           <>
             <div className="fixed inset-0 z-30" onPointerDown={() => setOpen(false)} />
             <motion.div
-              className="absolute top-10 left-1/2 z-40 flex w-60 -translate-x-1/2 flex-col gap-2 rounded-[var(--radius-surface)] border border-line bg-paper p-2.5 shadow-[var(--shadow-float)]"
-              style={{ transformOrigin: "top center" }}
+              className="absolute top-0 left-10 z-40 flex w-60 flex-col gap-2 rounded-[var(--radius-surface)] border border-line bg-paper p-2.5 shadow-[var(--shadow-float)]"
+              style={{ transformOrigin: "left top" }}
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}

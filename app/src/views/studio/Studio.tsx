@@ -220,7 +220,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
     <div className="flex h-full">
       <Rail story={story} pages={pages} previewLayout={previewLayout} onPagesChange={onPagesChange} onReveal={(pid) => canvas.current?.revealPanel(pid)} />
 
-      <div className="relative min-w-0 flex-1">
+      <div className="@container relative min-w-0 flex-1">
         <Canvas ref={canvas} story={story} pages={pages} pageIdx={pageIdx} onPagesChange={onPagesChange} lettering={lettering} onZoom={setZoomLabel} />
 
         <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-3">
