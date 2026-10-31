@@ -255,3 +255,13 @@ def test_auto_letter_keeps_bubbles_moved_while_planning(sample, monkeypatch):
     n = lettering.auto_letter(st.load(sample), "p03")
     bs = st.load(sample).panel("p03")["bubbles"]
     assert n == 1 and bs[0]["at"] and bs[1]["at"] == [0.25, 0.75]
+
+
+def test_story_slugs_cannot_escape_stories_dir():
+    # `..` as a slug used to resolve to the stories folder's parent (the repo root) and serve any
+    # file in it, .env included.
+    (st.STORIES.parent / "secret.txt").write_text("nope")
+    for url in ("/files/%2E%2E/secret.txt", "/files/%2E/../secret.txt",
+                "/api/stories/%2E%2E", "/api/stories/%2E%2E/feedback"):
+        assert client.get(url).status_code == 404, url
+    assert client.put("/api/stories/%2E%2E/meta", json={"title": "x"}).status_code in (404, 405, 422), "edit"

@@ -123,7 +123,17 @@ def _mtime(p: Path) -> int | None:
     return int(p.stat().st_mtime * 1000) if p.exists() else None
 
 
+def _story_dir(slug: str) -> Path:
+    """The folder for a story slug, or a 404. Rejects anything that isn't a direct child of
+    stories/ (`..`, `.`, `a/b`, hidden folders), so a slug can never reach files outside it."""
+    d = (st.STORIES / slug).resolve()
+    if not slug or slug.startswith(".") or d.parent != st.STORIES:
+        raise HTTPException(404, "not found")
+    return d
+
+
 def _story(slug: str) -> st.Story:
+    _story_dir(slug)
     try:
         return st.load(slug)
     except st.StoryError as e:
@@ -408,7 +418,7 @@ def do_compose(slug: str):
 
 @app.get("/files/{slug}/{path:path}")
 def files(slug: str, path: str):
-    base = (st.STORIES / slug).resolve()
+    base = _story_dir(slug)
     p = (base / path).resolve()
     if not p.is_relative_to(base) or not p.is_file():
         raise HTTPException(404, "not found")
@@ -440,7 +450,7 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
 
 def _edit(slug: str):
-    if not (st.STORIES / slug / "story.yaml").exists():
+    if not (_story_dir(slug) / "story.yaml").exists():
         raise HTTPException(404, f"no story {slug!r}")
     return pj.edit(slug)
 
