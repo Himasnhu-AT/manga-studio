@@ -197,7 +197,7 @@ def test_settings_and_app_endpoints(monkeypatch):
     assert set(ms) == {"qwen-image-2.1-turbo", "qwen-image-2.1"}
     assert client.post("/api/models/nope/download").status_code == 404
 
-    monkeypatch.setattr(appsvc, "_agent", lambda b: {"installed": True, "connected": b == "claude"})
+    monkeypatch.setattr(appsvc, "_agent", lambda b, fresh=False: {"installed": True, "connected": b == "claude"})
     monkeypatch.setattr(appsvc, "_ollama", lambda url: {"installed": True, "running": False, "models": []})
     integ = client.get("/api/integrations").json()
     assert integ["claude"]["connected"] and not integ["codex"]["connected"]
@@ -224,3 +224,48 @@ def test_sheet_casting_itself_and_unplaced_bubbles(sample):
     assert "bubble 1 has no position" in lettering.overlap_issues(s, "p06")
     assert lettering.auto_letter(s, "p06") == 1
     assert all(b.get("at") for b in st.load(sample).panel("p06")["bubbles"])
+
+
+def test_panel_order(sample):
+    ids = [p["id"] for p in st.load(sample).panels]
+    new = ids[:2] + list(reversed(ids[2:]))
+    r = client.put(f"/api/stories/{sample}/panels/order", json={"order": new})
+    assert r.status_code == 200, r.text
+    assert [p["id"] for p in st.load(sample).panels] == new
+    text = (st.STORIES / sample / "story.yaml").read_text()
+    assert "# ---- references" in text and "# ---- story" in text  # comments survive the reorder
+    assert client.put(f"/api/stories/{sample}/panels/order", json={"order": new[:-1]}).status_code == 400
+    assert client.put(f"/api/stories/{sample}/panels/order", json={"order": new[:-1] + [new[0]]}).status_code == 400
+    assert client.put(f"/api/stories/{sample}/panels/order", json={"order": new[:-1] + ["nope"]}).status_code == 400
+
+
+def test_auto_crop_matches_canvas():
+    # Expected numbers worked by hand from app/src/lib/layout.ts artFrame/autoCrop:
+    # 864x1152 art (aspect 0.75) in a 2:1 slot -> visible = 0.375 of the height.
+    ia, sa = 864 / 1152, 2.0
+    top_bubble = {"bubbles": [{"text": "Hi", "at": [0.7, 0.1]}]}
+    c = export.auto_crop(top_bubble, ia, sa)  # top = 0.1 - 0.09 = 0.01 -> y = 0.01 / 0.625 = 0.016
+    assert c["x"] == 0.5 and c["scale"] == 1 and c["y"] == pytest.approx(0.016)
+    left, top, w, h = export.art_frame(ia, sa, c)  # h = 2 / 0.75 * 100 = 266.67%
+    assert (left, w) == (0, 100) and h == pytest.approx(266.6667, abs=1e-3) and top == pytest.approx(-2.66667, abs=1e-4)
+    low = {"bubbles": [{"text": "Hi", "at": [0.5, 0.6]}]}  # 0.51 / 0.625 = 0.816 -> capped at 0.5
+    assert export.auto_crop(low, ia, sa)["y"] == 0.5
+    assert export.auto_crop({}, ia, sa) is None  # no lettering: centred cover
+    assert export.auto_crop(top_bubble, ia, 0.5) is None  # tall slot: no vertical overflow
+    explicit = {"crop": {"x": 0.2, "y": 0.9, "scale": 1.5}, **top_bubble}
+    assert export.auto_crop(explicit, ia, sa) == explicit["crop"]
+    # explicit crop in a tall slot: width overflows, focal x works like object-position
+    left, top, w, h = export.art_frame(ia, 0.5, explicit["crop"])  # w = 0.75/0.5*100*1.5 = 225, h = 150
+    assert w == pytest.approx(225) and h == pytest.approx(150)
+    assert left == pytest.approx(-25) and top == pytest.approx(-45)
+    # slot pixels: 1000x500 slot, top bubble -> frame top -13.33px, 1000 x 1333.33px
+    assert export.slot_frame_px(top_bubble, (864, 1152), 1000, 500) == pytest.approx((0, -13.3333, 1000, 1333.333), abs=1e-3)
+
+
+def test_export_frames_wide_slot_like_canvas():
+    art = Image.new("RGB", (864, 1152), (240, 240, 240))
+    ImageDraw.Draw(art).rectangle([0, 0, 863, 114], fill=(220, 30, 30))  # red band = top 10% where bubbles live
+    with_bubble = export._fit(art, {"bubbles": [{"text": "Hi", "at": [0.7, 0.1]}]}, 1000, 500)
+    assert with_bubble.getpixel((500, 5))[:3] == (220, 30, 30)  # top of the art stays in view
+    centred = export._fit(art, {}, 1000, 500)
+    assert centred.getpixel((500, 5))[:3] == (240, 240, 240)  # plain cover crop cuts the top band

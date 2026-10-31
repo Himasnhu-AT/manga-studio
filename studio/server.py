@@ -588,6 +588,32 @@ def patch_panel(slug: str, pid: str, body: dict):
     return {"ok": True}
 
 
+class OrderReq(BaseModel):
+    order: list[str]
+
+
+@app.put("/api/stories/{slug}/panels/order")
+def order_panels(slug: str, req: OrderReq):
+    """Reorder `panels:`. Each panel keeps its own comments (ruamel stores them per index, so they move too)."""
+    with _edit(slug) as data:
+        panels = data.get("panels") or []
+        ids = [p.get("id") for p in panels]
+        if sorted(req.order) != sorted(ids) or len(set(req.order)) != len(req.order):
+            raise HTTPException(400, f"order must list every panel exactly once (have: {', '.join(ids)})")
+        old, old_ca = list(panels), dict(panels.ca.items)
+        at = {pid: i for i, pid in enumerate(ids)}
+        new_ca = {}
+        for i, pid in enumerate(req.order):
+            panels[i] = old[at[pid]]
+            if at[pid] in old_ca:
+                new_ca[i] = old_ca[at[pid]]
+        panels.ca.items.clear()
+        panels.ca.items.update(new_ca)
+    _checked(slug)
+    bump()
+    return {"ok": True, "order": req.order}
+
+
 @app.delete("/api/stories/{slug}/panels/{pid}")
 def delete_panel(slug: str, pid: str):
     with _edit(slug) as data:

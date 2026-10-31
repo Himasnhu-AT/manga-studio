@@ -104,6 +104,7 @@ v0.1: `GET /api/status`, `GET /api/stories`, `GET /api/stories/{slug}`, `POST /a
 | POST | /api/stories/{slug}/panels | `{id?, title?, after?, page?}` | `{id}` |
 | PATCH | /api/stories/{slug}/panels/{pid} | any panel key (`action, refs, use, cast, bubbles, sfx, layers, crop, protect, title, seed, strength, strip`) | `{ok}` |
 | DELETE | /api/stories/{slug}/panels/{pid} | | `{ok}` |
+| PUT | /api/stories/{slug}/panels/order | `{order: [ids]}` (every panel id exactly once) | `{ok, order}` |
 | PUT | /api/stories/{slug}/pages | `{pages: [...]}` | `{ok}` |
 | POST | /api/stories/{slug}/pages/auto | `{per_page?: 4}` | `{pages}` |
 | PUT | /api/stories/{slug}/cast/{cid} | cast entry | `{ok}` |

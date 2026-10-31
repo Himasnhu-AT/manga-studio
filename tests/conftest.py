@@ -7,8 +7,11 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Generated versions (stories/*/out) aren't in git, so a fresh worktree has none. Point
+# STUDIO_TEST_STORIES at a checkout that has them (read-only: it is copied, never written).
+SRC = Path(os.environ.get("STUDIO_TEST_STORIES", ROOT / "stories"))
 _TMP = Path(tempfile.mkdtemp(prefix="studio-test-"))
-shutil.copytree(ROOT / "stories", _TMP / "stories", ignore=shutil.ignore_patterns("final", "*.mp4", ".DS_Store"))
+shutil.copytree(SRC, _TMP / "stories", ignore=shutil.ignore_patterns("final", "*.mp4", ".DS_Store"))
 os.environ["STUDIO_STORIES"] = str(_TMP / "stories")
 os.environ["STUDIO_SETTINGS"] = str(_TMP / "settings.json")
 os.environ["STUDIO_ENGINE"] = "mock"
