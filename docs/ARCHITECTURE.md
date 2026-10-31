@@ -31,6 +31,42 @@ stories/<slug>/final/                composed PNGs, strip, video, export/ (pdf, 
 .studio/backend.log                  backend output when the Tauri shell started it
 ```
 
+Those are checkout paths. The installed app (a downloaded `.app`) keeps the same story layout but
+moves everything out of its read-only, code-signed bundle (see "Desktop shell" below):
+
+```
+~/Manga Studio/stories/<slug>/                          stories (seeded with cheek-squish on first launch)
+~/Library/Application Support/Manga Studio/settings.json app settings
+~/Library/Application Support/Manga Studio/backend.log   backend output
+~/Library/Application Support/Manga Studio/venv/         the backend's Python environment (uv)
+~/Library/Application Support/Manga Studio/pycache/      Python bytecode (PYTHONPYCACHEPREFIX)
+~/Library/Application Support/Manga Studio/bin/manga-studio-mcp   MCP launcher, rewritten every launch
+```
+
+## Desktop shell (`app/src-tauri/src/lib.rs`)
+
+On launch the shell reuses a backend already listening on 127.0.0.1:7860 or spawns one (its own
+process group; stopped on quit only if it spawned it). It picks one of two layouts:
+
+- **Dev** (debug build, `MANGA_STUDIO_ROOT` set, or a release binary outside a `.app` whose source
+  checkout exists): `uv run studio serve --port 7860` in the repo. Settings, log and stories as in a
+  checkout.
+- **Installed** (binary inside `<App>.app/Contents/MacOS`): the backend ships as Tauri resources in
+  `Contents/Resources/backend/` (`pyproject.toml`, `uv.lock`, `studio/**/*.py`, `templates/`,
+  `dashboard/`, `fonts/`, `stories/cheek-squish/{story.yaml,refs/}`; listed in
+  `tauri.conf.json` `bundle.resources`). It runs
+  `uv run --frozen --project <Resources>/backend studio serve --port 7860` from the data folder with
+  `UV_PROJECT_ENVIRONMENT`, `STUDIO_STORIES`, `STUDIO_HOME`, `STUDIO_SETTINGS`,
+  `PYTHONPYCACHEPREFIX` and `STUDIO_MCP_LAUNCHER` set to the user paths above, so nothing is
+  written inside the bundle. The first launch creates the venv (`uv sync`, a minute or two; the
+  UI says so). If uv is missing the banner and the onboarding "This Mac" step show
+  `curl -LsSf https://astral.sh/uv/install.sh | sh` and a Restart button.
+
+Both modes append the usual install dirs (`~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bin`,
+`/usr/local/bin`) to the backend's PATH, since GUI apps start with a minimal one. First run
+(onboarding window vs main window) is decided by `onboarded` in the same settings file the backend
+uses in that mode.
+
 story.yaml is edited with ruamel round-trip (`studio/project.py`) so comments and key order
 survive UI edits. Never hand-edit state.json while the server runs.
 
@@ -183,6 +219,11 @@ running, tools fail with a message telling the agent to open the app or run `uv 
 Register: `claude mcp add --scope user manga-studio -- uv --directory <repo> run studio mcp`
 (the app's Connect button runs exactly this)
 (Codex: `codex mcp add manga-studio -- uv --directory <repo> run studio mcp`).
+In the installed app the command is the launcher script instead, plus the data env:
+`claude mcp add --scope user manga-studio -e STUDIO_STORIES=... -e STUDIO_SETTINGS=... -e STUDIO_HOME=... -e UV_PROJECT_ENVIRONMENT=... -e PYTHONPYCACHEPREFIX=... -- "~/Library/Application Support/Manga Studio/bin/manga-studio-mcp"`
+(codex: `--env`). The launcher runs `uv run --frozen --project <Resources>/backend studio mcp` and
+is rewritten on every launch, so moving or updating the app keeps the registration working.
+`/api/integrations` returns the exact shell-quoted commands as `mcp.add.claude` / `mcp.add.codex`.
 
 ## Environment variables
 
@@ -191,7 +232,11 @@ Register: `claude mcp add --scope user manga-studio -- uv --directory <repo> run
 | `STUDIO_URL` | http://127.0.0.1:7860 | backend URL for the CLI and the MCP bridge (and the Vite dev proxy) |
 | `STUDIO_ENGINE` | `mflux` | `mock` draws placeholders instead of loading the model (`serve --mock`) |
 | `STUDIO_STORIES` | `<repo>/stories` | stories directory (tests and QA point it at a scratch copy) |
-| `STUDIO_SETTINGS` | `<repo>/.studio/settings.json` | app settings file |
+| `STUDIO_HOME` | `<repo>/.studio` | app state folder (settings live here unless `STUDIO_SETTINGS` says otherwise) |
+| `STUDIO_SETTINGS` | `$STUDIO_HOME/settings.json` | app settings file |
+| `STUDIO_APP_DIST` | `<repo>/app/dist` | built UI served at `/` (falls back to the v0.1 dashboard) |
+| `STUDIO_MCP_LAUNCHER` | unset | MCP command the app registers with agents (set by the installed app) |
 | `STUDIO_MLX_CACHE_GB` | 2 | cap on MLX's buffer cache |
-| `MANGA_STUDIO_ROOT` | the checkout the app was built from | repo the Tauri shell runs the backend in |
+| `MANGA_STUDIO_ROOT` | the checkout the app was built from | repo the Tauri shell runs the backend in (forces dev mode) |
+| `UV_PROJECT_ENVIRONMENT`, `PYTHONPYCACHEPREFIX` | uv / Python defaults | set by the installed app so the venv and bytecode live outside the bundle |
 | `VITE_API` | http://127.0.0.1:7860 | backend URL baked into a Tauri production build |

@@ -36,7 +36,14 @@ uv run studio pipeline <slug> [run|status|task|cancel]  # Mode B pipeline (see b
 ```
 
 If `gen` says the server isn't running, start `uv run studio serve` in the background (don't
-use memgate). If the desktop app is open, it already runs one. The first job loads the model
+use memgate). If the desktop app is open, it already runs one (and the CLI/MCP talk to whichever
+backend holds port 7860).
+
+The app finds its backend two ways (app/src-tauri/src/lib.rs): **dev** (`pnpm tauri dev`, any debug
+build, or `MANGA_STUDIO_ROOT` set) runs `uv run studio serve` in this repo, data in `stories/` and
+`.studio/`. **Installed** (a built/downloaded `.app`) runs the copy bundled in
+`Contents/Resources/backend` with `uv run --frozen --project`, stories in `~/Manga Studio/stories`,
+settings/log/venv in `~/Library/Application Support/Manga Studio/`. Never write inside the `.app`. The first job loads the model
 (about 1 to 2 min); later jobs reuse it.
 
 ## MCP or CLI
@@ -140,7 +147,8 @@ panels:
 
 Outputs: `stories/<slug>/out/<pid>/NNN-s<seed>.png` + `.json` (full prompt, refs and versions used,
 seconds). Picks, stars, notes: `stories/<slug>/state.json`. Pipeline: `source.md`, `pipeline/`,
-`source-coverage.json`. Exports: `final/export/`. App settings: `.studio/settings.json`.
+`source-coverage.json`. Exports: `final/export/`. App settings: `.studio/settings.json`
+(installed app: `~/Library/Application Support/Manga Studio/settings.json`, stories in `~/Manga Studio/stories`).
 
 ## Memory on this Mac (24 GB)
 

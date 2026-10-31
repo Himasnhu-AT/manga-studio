@@ -27,6 +27,21 @@ No Tauri? `uv run studio serve` and open http://127.0.0.1:7860 (serves the built
 The first launch walks through setup: checks the Mac, downloads Qwen-Image-2.1 Turbo if it isn't
 cached, connects an AI, and creates a first project.
 
+### The downloaded app
+
+The released `Manga Studio.app` carries the backend inside it and needs only
+[uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`; the app tells
+you if it's missing). The first launch installs the Python packages (a minute or two). Where things
+live:
+
+```
+~/Manga Studio/stories/                       your stories (starts with the sample, cheek-squish)
+~/Library/Application Support/Manga Studio/   settings.json, backend.log, the Python venv, MCP launcher
+```
+
+`pnpm tauri build` makes the same app from a checkout; a debug build (`pnpm tauri dev`) or
+`MANGA_STUDIO_ROOT=<repo>` always runs the checkout's backend and stories instead.
+
 ## Two ways to make a story
 
 **Studio (manual).** Page layouts (RTL/LTR grids, diagonal slices) or a vertical webtoon scroll.
