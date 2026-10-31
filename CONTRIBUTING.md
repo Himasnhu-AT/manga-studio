@@ -41,3 +41,15 @@ cd app && pnpm exec tsc -b && pnpm exec vite build
 
 By contributing you agree that your contributions are licensed under the
 [BSD 3-Clause License](LICENSE).
+
+## How changes land on main
+
+`main` is protected. Every change goes through a pull request that needs:
+
+- one approving review from someone with write access (a collaborator or a maintainer),
+- the three CI checks green: Backend tests, App (typecheck, build, cargo check), Website build,
+- every review thread resolved. New commits dismiss earlier approvals.
+
+Fork, branch, and open the PR against `main`. Repository admins can bypass the rules for releases.
+
+Be decent to each other: see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

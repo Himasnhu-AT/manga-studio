@@ -1,17 +1,33 @@
 version: 2
+# Monthly, with minor and patch bumps grouped into one PR per ecosystem; majors stay separate
+# so each can be checked on its own.
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: {interval: monthly}
+    groups:
+      actions: {update-types: [minor, patch]}
   - package-ecosystem: npm
     directory: /app
     schedule: {interval: monthly}
     open-pull-requests-limit: 5
+    groups:
+      app: {update-types: [minor, patch]}
   - package-ecosystem: npm
     directory: /website
     schedule: {interval: monthly}
     open-pull-requests-limit: 5
+    groups:
+      website: {update-types: [minor, patch]}
   - package-ecosystem: cargo
     directory: /app/src-tauri
     schedule: {interval: monthly}
     open-pull-requests-limit: 5
+    groups:
+      cargo: {update-types: [minor, patch]}
+  - package-ecosystem: uv
+    directory: /
+    schedule: {interval: monthly}
+    open-pull-requests-limit: 5
+    groups:
+      python: {update-types: [minor, patch]}

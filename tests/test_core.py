@@ -178,7 +178,7 @@ def test_compose_vertical_and_layers(sample):
     assert "p05" in r.json()["composed"]
 
 
-def test_settings_and_app_endpoints(monkeypatch):
+def test_settings_and_app_endpoints(monkeypatch, tmp_path):
     s = client.get("/api/settings").json()
     assert s["onboarded"] is False and s["llm"]["provider"] == "heuristic"
     s = client.put("/api/settings", json={"onboarded": True, "llm": {"provider": "ollama"}}).json()
@@ -197,7 +197,10 @@ def test_settings_and_app_endpoints(monkeypatch):
     assert set(ms) == {"qwen-image-2.1-turbo", "qwen-image-2.1"}
     assert client.post("/api/models/nope/download").status_code == 404
 
+    # no real agent CLIs or ~/.local/bin: CI has neither claude nor codex
+    monkeypatch.setenv("STUDIO_MCP_BIN_DIR", str(tmp_path / "bin"))
     monkeypatch.setattr(appsvc, "_agent", lambda b, **_: {"installed": True, "connected": b == "claude"})
+    monkeypatch.setattr(appsvc, "_registered_command", lambda b: "manga-studio-mcp")
     monkeypatch.setattr(appsvc, "_ollama", lambda url: {"installed": True, "running": False, "models": []})
     integ = client.get("/api/integrations").json()
     assert integ["claude"]["connected"] and not integ["codex"]["connected"]

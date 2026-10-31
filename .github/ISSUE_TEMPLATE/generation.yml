@@ -1,0 +1,39 @@
+name: Bad generation
+description: A panel came out wrong (identity drift, wrong outfit or colors, broken hands, text in the image) and the story.yaml looks right.
+labels: [generation]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most drift is fixable in story.yaml (see "Consistency rules" in CLAUDE.md): same anchors for every panel,
+        exact color words, the outfit named every time. If it still drifts, this report helps tune the prompt builder.
+  - type: textarea
+    id: what
+    attributes:
+      label: What's wrong in the image
+      placeholder: "Kai's black sweater turned white by panel 3."
+    validations:
+      required: true
+  - type: textarea
+    id: prompt
+    attributes:
+      label: The prompt
+      description: Output of `uv run studio prompt <story> <panel>`, or the `prompt` field from the panel's out/<pid>/NNN-s<seed>.json.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model, size and seed
+      placeholder: "qwen-image-2.1-turbo, q4, 864x1152, seed 42"
+  - type: textarea
+    id: images
+    attributes:
+      label: Images
+      description: Drag in the output and the reference images it used, if you can share them.
+  - type: input
+    id: version
+    attributes:
+      label: Manga Studio version
+      placeholder: "0.2.0 or a commit hash"
