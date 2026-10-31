@@ -197,7 +197,7 @@ def test_settings_and_app_endpoints(monkeypatch):
     assert set(ms) == {"qwen-image-2.1-turbo", "qwen-image-2.1"}
     assert client.post("/api/models/nope/download").status_code == 404
 
-    monkeypatch.setattr(appsvc, "_agent", lambda b: {"installed": True, "connected": b == "claude"})
+    monkeypatch.setattr(appsvc, "_agent", lambda b, fresh=False: {"installed": True, "connected": b == "claude"})
     monkeypatch.setattr(appsvc, "_ollama", lambda url: {"installed": True, "running": False, "models": []})
     integ = client.get("/api/integrations").json()
     assert integ["claude"]["connected"] and not integ["codex"]["connected"]
