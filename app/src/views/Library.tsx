@@ -97,7 +97,7 @@ function ProjectCard({ s }: { s: StorySummary }) {
             <Badge tone="err">story.yaml has an error</Badge>
           ) : (
             <>
-              <span className="num">{s.panels} panels</span>
+              <span className="num">{s.panels} {s.panels === 1 ? "panel" : "panels"}</span>
               {s.mode && <Badge>{s.mode === "webtoon" ? "Webtoon" : "Pages"}</Badge>}
             </>
           )}
