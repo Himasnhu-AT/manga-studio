@@ -91,8 +91,9 @@ export function Rail({
             {previewLayout && (
               <div className="flex flex-col gap-2 rounded-[var(--radius-control)] bg-accent-wash p-2.5">
                 <p className="text-[12px] text-accent-ink">This layout is a preview. Save it to edit pages.</p>
-                <Button size="sm" variant="primary" onClick={() => attempt(() => Api.autoPages(story.slug), "Pages laid out")}>
-                  Lay out pages
+                {/* Save the preview shown, not a fresh server layout: what you see is what you get. */}
+                <Button size="sm" variant="primary" onClick={() => attempt(() => Api.putPages(story.slug, pages), "Pages saved")}>
+                  Save layout
                 </Button>
               </div>
             )}
