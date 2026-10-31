@@ -1,7 +1,8 @@
 import { PressFigure } from "@/art/press/figure";
 import { Command } from "@/components/command";
 import { Illo, hasIllo } from "@/components/illo";
-import { SITE } from "@/components/site";
+import { AppleLogo } from "@phosphor-icons/react/dist/ssr";
+import { DOWNLOAD, SITE } from "@/components/site";
 
 const STAGES = ["Analysis", "Script", "Layout", "Artwork", "Lettering", "QA"];
 
@@ -11,6 +12,27 @@ function Mark() {
       <rect x="1" y="1" width="22" height="22" rx="6" fill="#d2452f" />
       <path d="M12 6.2c-3.6 0-6.3 2.1-6.3 4.8 0 1.7 1 3.1 2.6 4l-.6 2.8 3-2.2c.4.1.9.1 1.3.1 3.6 0 6.3-2.1 6.3-4.8S15.6 6.2 12 6.2Z" fill="#fcfcfb" />
     </svg>
+  );
+}
+
+// The notarized DMG from the latest GitHub release, with the version and what it runs on.
+function DownloadButton({ className = "" }: { className?: string }) {
+  return (
+    <a className={`btn btn-primary ${className}`} href={DOWNLOAD.mac} aria-label={`Download Manga Studio ${DOWNLOAD.version} for Mac (DMG)`}>
+      <AppleLogo size={17} weight="fill" aria-hidden="true" className="-mt-px" />
+      Download for Mac
+    </a>
+  );
+}
+
+function DownloadMeta({ className = "" }: { className?: string }) {
+  return (
+    <p className={`text-[13.5px] text-ink-3 ${className}`}>
+      Version {DOWNLOAD.version} · {DOWNLOAD.requirements} ·{" "}
+      <a className="link whitespace-nowrap underline decoration-line-2 underline-offset-4 hover:decoration-ink-3" href={DOWNLOAD.releases}>
+        All releases
+      </a>
+    </p>
   );
 }
 
@@ -40,8 +62,9 @@ function Nav() {
               </a>
             </li>
           </ul>
-          <a className="btn btn-primary h-9 px-3.5 text-[14px]" href="#start">
-            Get started
+          <a className="btn btn-primary h-9 px-3.5 text-[14px]" href={DOWNLOAD.mac} aria-label={`Download Manga Studio ${DOWNLOAD.version} for Mac`}>
+            <AppleLogo size={15} weight="fill" aria-hidden="true" className="-mt-px" />
+            Download
           </a>
         </div>
       </nav>
@@ -61,13 +84,14 @@ function Hero() {
         <p className="rise max-w-[40ch] text-[18px] leading-[1.6] text-ink-2" style={{ ["--rise-delay" as string]: "60ms" }}>
           Paste a story. Qwen-Image draws the panels on your Mac, you letter and export. Nothing leaves the machine.
         </p>
-        <div className="rise mt-8 flex flex-wrap gap-3" style={{ ["--rise-delay" as string]: "120ms" }}>
-          <a className="btn btn-primary" href="#start">
-            Get started
-          </a>
-          <a className="btn btn-quiet" href="#make">
-            How it works
-          </a>
+        <div className="rise mt-8" style={{ ["--rise-delay" as string]: "120ms" }}>
+          <div className="flex flex-wrap gap-3">
+            <DownloadButton />
+            <a className="btn btn-quiet" href="#start">
+              Get started
+            </a>
+          </div>
+          <DownloadMeta className="mt-3" />
         </div>
       </div>
       <div className="rise min-w-0" style={{ ["--rise-delay" as string]: "80ms" }}>
@@ -205,7 +229,7 @@ function Agents() {
 }
 
 const SPECS = [
-  { k: "Apple Silicon", v: "An M-series Mac. MLX runs the model on the GPU and unified memory." },
+  { k: "Apple Silicon", v: "An M-series Mac on macOS 14 or later. MLX runs the model on the GPU and unified memory." },
   { k: "24 GB memory", v: "Recommended. It runs Turbo at 4-bit; with less, use smaller panels." },
   { k: "About 32 GB disk", v: "For Qwen-Image 2.1 Turbo, downloaded once from Hugging Face." },
   { k: "Your files, your Mac", v: "Stories, references and every generated version stay in the project folder." },
@@ -245,13 +269,32 @@ function Start() {
       <div className="mx-auto max-w-[860px] px-5 py-20 sm:px-8 md:py-28">
         <h2 className="hand text-balance text-[36px] leading-[1.1] sm:text-[44px]">Get started</h2>
         <p className="mt-4 max-w-[58ch] text-[17px] text-ink-2">
-          You need <code className="font-mono text-[15px]">uv</code> and <code className="font-mono text-[15px]">pnpm</code>. The first launch checks the Mac, downloads the model if it isn&apos;t cached, connects an AI and creates a first project.
+          The first launch checks the Mac, downloads the model if it isn&apos;t cached (about 32 GB, once), connects an AI and creates a first project.
         </p>
 
         <div className="mt-12 space-y-10">
+          <div className="rounded-[14px] border border-line bg-paper p-6 sm:p-7">
+            <h3 className="font-medium">Download the app</h3>
+            <p className="mt-1 max-w-[60ch] text-[15px] text-ink-2">
+              Signed and notarized by Apple. Open the DMG and drag Manga Studio to Applications. The app runs its Python backend with{" "}
+              <a className="link underline decoration-line-2 underline-offset-4 hover:decoration-ink-3" href={DOWNLOAD.uv}>
+                <code className="font-mono text-[14px]">uv</code>
+              </a>
+              , so install that first.
+            </p>
+            <div className="mt-4">
+              <Command label="install uv" lines={["curl -LsSf https://astral.sh/uv/install.sh | sh"]} />
+            </div>
+            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3">
+              <DownloadButton />
+              <DownloadMeta />
+            </div>
+          </div>
           <div>
-            <h3 className="font-medium">Install and open the app</h3>
-            <p className="mt-1 text-[15px] text-ink-2">From a clone of the repo. The desktop app starts the backend for you.</p>
+            <h3 className="font-medium">Or build it from source</h3>
+            <p className="mt-1 text-[15px] text-ink-2">
+              From a clone of the repo, with <code className="font-mono text-[14px]">uv</code> and <code className="font-mono text-[14px]">pnpm</code>. The desktop app starts the backend for you.
+            </p>
             <div className="mt-4">
               <Command label="install and open the app" lines={["uv sync", "cd app && pnpm install", "pnpm tauri dev"]} />
             </div>
