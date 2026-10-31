@@ -87,6 +87,16 @@ if [[ "$VERSION" == "$PKG_VERSION" && "$VERSION" == "$CARGO_VERSION" ]]; then
 else
   fail "versions differ: tauri.conf.json=$VERSION app/package.json=$PKG_VERSION Cargo.toml=$CARGO_VERSION"
 fi
+SITE_VERSION="$(node -e '
+  const s = require("fs").readFileSync("website/components/site.ts", "utf8");
+  const m = s.match(/DOWNLOAD\s*=\s*\{[^}]*?version:\s*"([^"]+)"/);
+  console.log(m ? m[1] : "");
+')"
+if [[ "$SITE_VERSION" == "$VERSION" ]]; then
+  ok "website download version $SITE_VERSION (website/components/site.ts)"
+else
+  warn "website/components/site.ts DOWNLOAD.version is '$SITE_VERSION', expected $VERSION (the site shows the wrong version)"
+fi
 
 # In a dry run the git checks only warn, so the build can be tried from a branch.
 gitcheck() { if [[ $DRY_RUN -eq 1 ]]; then warn "$1 (ignored in --dry-run)"; else fail "$1"; fi; }
