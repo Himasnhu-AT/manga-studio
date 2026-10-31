@@ -171,12 +171,14 @@ fi
 if [[ $PUBLISH -eq 1 ]]; then
   NOTES_TMP="$(mktemp -t manga-studio-notes)"
   if [[ -n "$NOTES_FILE" ]]; then
-    [[ -s "$NOTES_FILE" ]] && cp "$NOTES_FILE" "$NOTES_TMP" || fail "notes file $NOTES_FILE is missing or empty"
+    if [[ -s "$NOTES_FILE" ]]; then
+      /bin/cp -f "$NOTES_FILE" "$NOTES_TMP"
+      ok "release notes from $NOTES_FILE"
+    else
+      fail "notes file $NOTES_FILE is missing or empty"
+    fi
   else
-    awk -v v="$VERSION" '
-      /^## / { if (on) exit; if (index($0, "[" v "]") || $2 == v) { on = 1; next } }
-      on { print }
-    ' CHANGELOG.md >"$NOTES_TMP" 2>/dev/null || true
+    scripts/changelog.sh section "$VERSION" >"$NOTES_TMP" 2>/dev/null || true
     if grep -q '[^[:space:]]' "$NOTES_TMP"; then ok "release notes from CHANGELOG.md [$VERSION]"; else fail "no '## [$VERSION]' section in CHANGELOG.md (or pass --notes-file)"; fi
   fi
 fi
@@ -292,6 +294,7 @@ fi
 /bin/cp -f "$OUT/$VERSIONED_DMG" "$OUT/$STABLE_DMG"
 (cd "$OUT" && shasum -a 256 "$STABLE_DMG" "$VERSIONED_DMG" >SHA256SUMS.txt)
 ok "assets in dist/release/:"
+# shellcheck disable=SC2012 # a listing for people, of names this script chose
 (cd "$OUT" && ls -lh | sed '1d;s/^/        /' && sed 's/^/        /' SHA256SUMS.txt)
 
 ASSETS=("$OUT/$STABLE_DMG" "$OUT/$VERSIONED_DMG" "$OUT/SHA256SUMS.txt")

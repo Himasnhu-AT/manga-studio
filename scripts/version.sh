@@ -40,6 +40,7 @@ is_semver() { [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]];
 #   toml      the version = "..." line in the first [package]/[project] table
 #   lock      the version = "..." line right after name = "manga-studio" (Cargo.lock, uv.lock)
 #   site      version: "..." inside `export const DOWNLOAD = {`
+# shellcheck disable=SC2016 # awk code, not shell
 AWK_PLACE='
 function out(line) { if (mode == "set") print line }
 {
