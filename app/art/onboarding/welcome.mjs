@@ -147,7 +147,7 @@ const poly = (pts, closed = true) => k.pathOf(pts.map(([a, b]) => pg(a, b)), clo
   out.push(L(poly([[hx - 9, tier2], [hx - 8, tier2 + 4], [hx - 4, tier2 + 7], [hx + 4, tier2 + 7], [hx + 8, tier2 + 4], [hx + 9, tier2]], false), { tone: "mid" }));
   // Speed lines in the right middle panel, each spanning the panel corner to corner.
   const sp = [];
-  for (let i = 1; i <= 4; i++) sp.push(poly([[A0 + 32 + g + 2.5 * i - 1, tier2], [A0 + 26 + g + 6 * i, tier1 - g]], false));
+  for (let i = 1; i <= 4; i++) sp.push(poly([[A0 + 32 + g + 2.5 * i - 1, tier2], [A0 + 26 + g + 5.5 * i, tier1 - g]], false));
   out.push(L(sp.join(""), { tone: "lo" }));
   // Bottom-right: a window frame (cross) in the panel.
   const wx0 = A0 + 21 + g, wx1 = A1;

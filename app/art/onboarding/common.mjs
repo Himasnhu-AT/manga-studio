@@ -66,15 +66,54 @@ export function halo(d) {
   return `<path class="iso-halo" d="${d}"/>`;
 }
 
+// Douglas-Peucker on polyline-only path data (M, L, Z): drops points within `tol` viewBox px of
+// the chord. The kit samples circles at ~1.5 px; 0.15 px of slack is invisible under the hand filter.
+function rdp(points, tol) {
+  if (points.length < 3) return points;
+  const [a, b] = [points[0], points[points.length - 1]];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  let far = -1, index = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const [x, y] = points[i];
+    const dist = len < 1e-9 ? Math.hypot(x - a[0], y - a[1]) : Math.abs((b[0] - a[0]) * (a[1] - y) - (a[0] - x) * (b[1] - a[1])) / len;
+    if (dist > far) [far, index] = [dist, i];
+  }
+  if (far <= tol) return [a, b];
+  return [...rdp(points.slice(0, index + 1), tol).slice(0, -1), ...rdp(points.slice(index), tol)];
+}
+export function simplify(d, tol = 0.15) {
+  if (!/^[MLZ\d\s.\-]+$/.test(d)) return d;
+  return d
+    .split("M")
+    .filter(Boolean)
+    .map((sub) => {
+      const closed = /Z\s*$/.test(sub);
+      const nums = sub.replace(/Z/g, "").trim().split(/[\sL]+/).map(Number);
+      let pts = [];
+      for (let i = 0; i + 1 < nums.length; i += 2) {
+        const p = [nums[i], nums[i + 1]];
+        const last = pts[pts.length - 1];
+        if (!last || last[0] !== p[0] || last[1] !== p[1]) pts.push(p);
+      }
+      if (pts.length > 3) {
+        // Split a closed ring at its farthest point from the start so both halves simplify.
+        if (closed) {
+          let far = 0;
+          pts.forEach((p, i) => { if (Math.hypot(p[0] - pts[0][0], p[1] - pts[0][1]) > Math.hypot(pts[far][0] - pts[0][0], pts[far][1] - pts[0][1])) far = i; });
+          pts = [...rdp([...pts.slice(0, far + 1)], tol).slice(0, -1), ...rdp([...pts.slice(far), pts[0]], tol).slice(0, -1)];
+        } else pts = rdp(pts, tol);
+      }
+      return "M" + pts.map(([x, y]) => `${x} ${y}`).join("L") + (closed ? "Z" : "");
+    })
+    .join("");
+}
+
 // Wrap and write the figure. `halos` stay outside the hand-drawn filter; `body` goes inside it.
 export function write(name, { seed, scale = 1.6, label, halos = [], body }) {
   const id = `ob-${name}`;
   const filter = `<filter id="hand-${name}" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="${seed}"/><feDisplacementMap in="SourceGraphic" scale="${scale}"/></filter>`;
   // Smaller path data: drop repeated points and the L after a coordinate (implicit lineto).
-  const tidy = (d) =>
-    d
-      .replace(/L(-?[\d.]+) (-?[\d.]+)(?=L\1 \2(?![\d.]))/g, "")
-      .replace(/(\d)L/g, "$1 ");
+  const tidy = (d) => simplify(d).replace(/(\d)L/g, "$1 ");
   body = body.map((part) => part.replace(/ d="([^"]*)"/g, (_, d) => ` d="${tidy(d)}"`));
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" id="${id}" class="iso-svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="${label.replace(/"/g, "&quot;")}">` +
