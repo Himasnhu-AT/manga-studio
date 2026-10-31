@@ -214,7 +214,7 @@ for (const a of [PAGE.a0 + 10, PAGE.a1 - 10]) {
   // Ink bottle (far right).
   const bx = 100, by = -36;
   const F = G.frameOf([bx, by, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0]);
-  halos.push(halo(k.haloOf({ x: bx - 10, y: by - 10, w: 20, d: 20, r: 10 }, 0, 1, P)).replace("/>", ` style="filter:blur(3px)"/>`));
+  halos.push(halo(k.haloOf({ x: bx - 10, y: by - 10, w: 20, d: 20, r: 10 }, 0, 1, P)));
   out.push(S(G.solidOf([[0, 10], [11, 10], [12.5, 9.4, 1], [14, 7.6, 1], [15, 5.2, 1], [15.6, 4.4], [17.5, 4.4]], F, P, { steps: 40 }), { tone: "hi", crease: "lo", inner: L(G.arcOf(F, 3, 10, P) + G.arcOf(F, 9, 10, P), { tone: "faint" }) }));
   out.push(S(k.cylinder(bx, by, 5.4, 17.5, 6, P, 32, 0.4), { tone: "mid" }));
   out.push(L(k.knurl(bx, by, 5.4, 18.1, 23.1, 30, P), { tone: "lo" }));

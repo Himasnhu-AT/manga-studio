@@ -78,9 +78,13 @@ export function write(name, { seed, scale = 1.6, label, halos = [], body }) {
   body = body.map((part) => part.replace(/ d="([^"]*)"/g, (_, d) => ` d="${tidy(d)}"`));
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" id="${id}" class="iso-svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="${label.replace(/"/g, "&quot;")}">` +
-    `<style>${scopedCss(id)}#${id} .iso-line{stroke-linecap:round;stroke-linejoin:round}</style>` +
-    `<defs>${filter}</defs>` +
-    halos.join("") +
+    `<style>${scopedCss(id)}#${id} .iso-line{stroke-linecap:round;stroke-linejoin:round}` +
+    // Ink silhouettes (pen and ink), the lit part's silhouette in the accent.
+    `#${id} .iso-edge[data-tone]{stroke:var(--anatomy-hi)}#${id} .iso-solid[data-lit]>.iso-edge[data-tone]{stroke:var(--anatomy-lit)}` +
+    // Halo blur through a user-space filter so small halos aren't clipped to their bbox.
+    `#${id} .iso-halo{filter:url(#${id}-soft);transform:none}</style>` +
+    `<defs>${filter}<filter id="${id}-soft" filterUnits="userSpaceOnUse" x="-40" y="-40" width="560" height="440"><feGaussianBlur stdDeviation="9"/></filter></defs>` +
+    `<g transform="translate(0 3)">${halos.join("")}</g>` +
     `<g filter="url(#hand-${name})">${body.join("")}</g></svg>\n`;
   if (process.env.SIZES) body.map((p, i) => [p.length, i, p.slice(0, 90)]).sort((a, b) => b[0] - a[0]).slice(0, 15).forEach((r) => console.log(r.join(" ")));
   const file = join(OUT, `${name}.svg`);
