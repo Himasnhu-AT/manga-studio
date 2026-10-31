@@ -226,6 +226,27 @@ export interface Job {
   seed: number;
 }
 
+/** Image edit ops (docs/ARCHITECTURE.md, "Image editing"). Masks are PNG data URLs, white/opaque = selected. */
+export type EditOp = { op: string; [k: string]: unknown };
+export interface SegmentResult {
+  file: string;
+  mask: string;
+  method: "vision" | "color";
+  instance: number | null;
+  instances: { index: number; bbox: Box; area: number }[];
+  area: number;
+  size: [number, number];
+  vision: boolean;
+}
+export interface EditResult {
+  file: string | null;
+  source: string;
+  edited_from: string;
+  jobs: number[];
+  seeds: number[];
+  size: [number, number];
+}
+
 export interface Status {
   rev: number;
   engine: string;
@@ -314,6 +335,12 @@ export const Api = {
     pid: string,
     b: { mode: "txt2img" | "img2img" | "inpaint"; prompt?: string; source?: string; mask?: string; strength?: number; count?: number },
   ) => api<{ jobs: number[]; seeds: number[] }>(`${s(slug)}/panels/${pid}/copilot`, { body: b }),
+  segment: (slug: string, pid: string, b: { point: [number, number]; file?: string; method?: "auto" | "vision" | "color"; tolerance?: number; ops?: EditOp[] }) =>
+    api<SegmentResult>(`${s(slug)}/panels/${pid}/segment`, { body: b }),
+  edit: (slug: string, pid: string, b: { ops: EditOp[]; file?: string }) => api<EditResult>(`${s(slug)}/panels/${pid}/edit`, { body: b }),
+  editPreview: (slug: string, pid: string, b: { ops: EditOp[]; file?: string }) =>
+    api<{ file: string; image: string; size: [number, number]; holes: boolean }>(`${s(slug)}/panels/${pid}/edit`, { body: { ...b, preview: true } }),
+  job: (id: number) => api<Job>(`/api/jobs/${id}`),
   pick: (slug: string, panel: string, file: string | null) => api(`${s(slug)}/pick`, { body: { panel, file } }),
   star: (slug: string, panel: string, file: string, value: boolean) => api(`${s(slug)}/star`, { body: { panel, file, value } }),
   addNote: (slug: string, b: { panel?: string | null; file?: string | null; text: string }) => api(`${s(slug)}/notes`, { body: b }),
