@@ -298,20 +298,24 @@ def draw_fx(img: Image.Image, item: dict) -> None:
     img.alpha_composite(layer)
 
 
-def render_panel(story: Story, pid: str, lettering: bool = True) -> Image.Image | None:
-    """The picked version with every visible layer applied, at the version's own resolution (RGBA)."""
+def render_panel(story: Story, pid: str, lettering: bool = True, crop: bool = True) -> Image.Image | None:
+    """The picked version with every visible layer applied, at the version's own resolution (RGBA).
+
+    `crop=False` leaves framing to the caller: page export frames the whole panel (art + lettering)
+    inside its slot exactly like the app's canvas does (export.art_frame / auto_crop)."""
     panel = story.panel(pid)
     v = picked_version(story, pid)
     if not v:
         return None
     art = Image.open(story.dir / "out" / pid / v).convert("RGBA")
     layers = panel.get("layers") or {}
-    if layers or panel.get("crop"):
+    use_crop = panel.get("crop") if crop else None
+    if layers or use_crop:
         bgc = (layers.get("background") or {})
         bg = _hex(bgc["color"]) if bgc.get("visible", True) and bgc.get("color") else (255, 255, 255, 255)
         img = Image.new("RGBA", art.size, bg)
         if (layers.get("art") or {}).get("visible", True):
-            img.alpha_composite(apply_crop(art, panel.get("crop"), (0, 0, 0, 0)))
+            img.alpha_composite(apply_crop(art, use_crop, (0, 0, 0, 0)))
         fx = layers.get("fx") or {}
         if fx.get("visible", True):
             for item in fx.get("items") or []:

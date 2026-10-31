@@ -91,11 +91,49 @@ def _slot_px(slot: dict, live) -> tuple[int, int, int, int]:
     return int(lx + x * lw), int(ly + y * lh), max(1, int(w * lw)), max(1, int(h * lh))
 
 
-def _cover(img: Image.Image, w: int, h: int) -> Image.Image:
-    s = max(w / img.width, h / img.height)
-    big = img.resize((max(w, int(img.width * s + 0.5)), max(h, int(img.height * s + 0.5))), Image.LANCZOS)
-    ox, oy = (big.width - w) // 2, (big.height - h) // 2
-    return big.crop((ox, oy, ox + w, oy + h))
+def art_frame(img_aspect: float, slot_aspect: float, crop: dict | None = None) -> tuple[float, float, float, float]:
+    """Where the panel sits inside its slot, as (left, top, width, height) percentages of the slot.
+    Port of app/src/lib/layout.ts `artFrame`: cover fit, zoom by crop.scale (>= 1), then the focal
+    point works like CSS object-position (0 = left/top edge, 1 = right/bottom edge)."""
+    s = max(1.0, float((crop or {}).get("scale", 1) or 1))
+    w = h = 100.0 * s
+    if img_aspect > slot_aspect:
+        w = (img_aspect / slot_aspect) * 100 * s
+    else:
+        h = (slot_aspect / img_aspect) * 100 * s
+    fx = float((crop or {}).get("x", 0.5))
+    fy = float((crop or {}).get("y", 0.5))
+    return (100 - w) * fx, (100 - h) * fy, w, h
+
+
+def auto_crop(panel: dict, img_aspect: float, slot_aspect: float) -> dict | None:
+    """Default framing for a panel without `crop`: keep its lettering in view (port of layout.ts
+    `autoCrop`). Bubbles sit near the top, and a centred cover crop of a wide slot would cut them."""
+    if panel.get("crop"):
+        return dict(panel["crop"])
+    items = [b["at"] for b in panel.get("bubbles") or [] if b.get("at")] + [x["at"] for x in panel.get("sfx") or [] if x.get("at")]
+    if not items or img_aspect >= slot_aspect:  # only vertical overflow needs help
+        return None
+    visible = img_aspect / slot_aspect  # fraction of the image height that fits
+    top = max(0.0, min(a[1] for a in items) - 0.09)
+    y = min(1.0, max(0.0, top / max(0.0001, 1 - visible)))
+    return {"x": 0.5, "y": min(y, 0.5), "scale": 1}
+
+
+def slot_frame_px(panel: dict, img_size: tuple[int, int], w: int, h: int) -> tuple[float, float, float, float]:
+    """The panel's frame inside a w x h slot in pixels (left, top, width, height); it may overflow the slot."""
+    ia, sa = img_size[0] / img_size[1], w / h
+    left, top, fw, fh = art_frame(ia, sa, auto_crop(panel, ia, sa))
+    return left * w / 100, top * h / 100, fw * w / 100, fh * h / 100
+
+
+def _fit(img: Image.Image, panel: dict, w: int, h: int) -> Image.Image:
+    """The rendered panel (art + lettering) framed into its slot exactly as the app's canvas frames it."""
+    left, top, fw, fh = slot_frame_px(panel, img.size, w, h)
+    big = img.resize((max(1, round(fw)), max(1, round(fh))), Image.LANCZOS)
+    out = Image.new("RGB", (w, h), (255, 255, 255))
+    out.paste(big, (round(left), round(top)))
+    return out
 
 
 def _poly_px(slot: dict, x: int, y: int, w: int, h: int) -> list[tuple[float, float]] | None:
@@ -109,11 +147,11 @@ def render_page(story: Story, page: dict, geo: dict) -> Image.Image:
     canvas = Image.new("RGB", (geo["W"], geo["H"]), (255, 255, 255))
     line = max(2, int(geo["W"] * 0.0022))
     for slot in page.get("panels") or []:
-        img = render_panel(story, slot["panel"])
+        img = render_panel(story, slot["panel"], crop=False)
         x, y, w, h = _slot_px(slot, geo["live"])
         poly = _poly_px(slot, x, y, w, h)
         if img is not None:
-            fit = _cover(img.convert("RGB"), w, h)
+            fit = _fit(img.convert("RGB"), story.panel(slot["panel"]), w, h)
             if poly:
                 mask = Image.new("L", (w, h), 0)
                 ImageDraw.Draw(mask).polygon([(px - x, py - y) for px, py in poly], fill=255)
@@ -129,7 +167,7 @@ def render_page(story: Story, page: dict, geo: dict) -> Image.Image:
 
 
 def render_webtoon(story: Story) -> Image.Image:
-    imgs = [render_panel(story, p["id"]) for p in story.panels if p.get("strip", True) is not False]
+    imgs = [render_panel(story, p["id"], crop=False) for p in story.panels if p.get("strip", True) is not False]
     imgs = [i.convert("RGB") for i in imgs if i is not None]
     W = WEBTOON_W
     gap = int(W * 0.08)
@@ -218,11 +256,12 @@ def page_svg(story: Story, page: dict, geo: dict) -> str:
         cid = f"clip-{page['id']}-{k}"
         shape = f'<polygon points="{_pts(poly)}"/>' if poly else f'<rect x="{x}" y="{y}" width="{w}" height="{h}"/>'
         defs.append(f'<clipPath id="{cid}">{shape}</clipPath>')
-        art = render_panel(story, slot["panel"], lettering=False)
+        art = render_panel(story, slot["panel"], lettering=False, crop=False)
         g = [f'<g clip-path="url(#{cid})" data-panel="{escape(slot["panel"])}">']
         if art is not None:
             pw, ph = art.size
-            g.append(f'<svg x="{x}" y="{y}" width="{w}" height="{h}" viewBox="0 0 {pw} {ph}" preserveAspectRatio="xMidYMid slice">')
+            fl, ft, fw, fh = slot_frame_px(panel, art.size, w, h)
+            g.append(f'<svg x="{x + fl:.2f}" y="{y + ft:.2f}" width="{fw:.2f}" height="{fh:.2f}" viewBox="0 0 {pw} {ph}" preserveAspectRatio="none">')
             g.append(f'<g class="art"><image width="{pw}" height="{ph}" href="{_data_uri(art)}"/></g>')
             g.append(f'<g class="lettering">{lettering_svg(panel, pw, ph)}</g></svg>')
         g.append("</g>")
@@ -242,7 +281,7 @@ def webtoon_svg(story: Story) -> str:
     y = gap
     body = []
     for p in panels:
-        art = render_panel(story, p["id"], lettering=False)
+        art = render_panel(story, p["id"], lettering=False, crop=False)
         if art is None:
             continue
         h = int(art.height * W / art.width)
