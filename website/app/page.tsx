@@ -47,6 +47,11 @@ function Nav() {
         <div className="flex items-center gap-7">
           <ul className="hidden items-center gap-7 text-[14.5px] md:flex">
             <li>
+              <a className="link" href="#example">
+                Example
+              </a>
+            </li>
+            <li>
               <a className="link" href="#make">
                 Studio and Pipeline
               </a>
@@ -102,6 +107,85 @@ function Hero() {
   );
 }
 
+const EXAMPLE_PAGES = [
+  { src: "/example/page-1.jpg", alt: "Page 1. A father squeezes his little daughter's cheeks while she laughs. His wife watches with a pout. He sends the daughter off to pick some candy and asks his wife what's up." },
+  { src: "/example/page-2.jpg", alt: "Page 2. The wife asks him to squeeze her cheeks too. He blushes, she insists, and he squeezes them, embarrassed, while she smiles." },
+  { src: "/example/page-3.jpg", alt: "Page 3. The daughter comes back with candy, sees them and giggles: \"Mommy's cheeks are squishy too!\" while the father hides his face." },
+];
+
+// A finished short made in the app: the brief, the three lettered pages and the mp4 with its song.
+function Example() {
+  return (
+    <section id="example" className="border-t border-line bg-canvas">
+      <div className="mx-auto max-w-[1240px] px-5 py-20 sm:px-8 md:py-28">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-end">
+          <div>
+            <h2 className="hand text-balance max-w-[16ch] text-[36px] leading-[1.1] sm:text-[44px]">
+              One paragraph in, <span className="mark">three pages out</span>
+            </h2>
+            <p className="mt-4 max-w-[52ch] text-[17px] text-ink-2">
+              Ten panels, drawn by Qwen-Image on a 24 GB MacBook and driven by Claude Code over MCP. Every bubble is vector lettering placed on top of the art.
+            </p>
+          </div>
+          <figure className="max-w-[560px] lg:justify-self-end">
+            <blockquote className="relative rounded-[22px] border-[1.5px] border-ink bg-paper px-5 py-4 text-[16px] leading-snug">
+              <span className="hand block text-[18px] font-normal text-pretty">
+                “A dad plays with his little girl, squeezing her cheeks. His wife watches, pouting. He sends the girl to pick some candy and asks his wife what&apos;s up. She asks him to squeeze her cheeks too. He does, embarrassed, and the girl comes back and giggles.”
+              </span>
+              <span aria-hidden="true" className="absolute -bottom-[9px] left-9 size-4 rotate-45 border-r-[1.5px] border-b-[1.5px] border-ink bg-paper" />
+            </blockquote>
+            <figcaption className="mt-4 pl-1 text-[13.5px] text-ink-3">The whole brief.</figcaption>
+          </figure>
+        </div>
+
+        <ol className="mt-14 grid snap-x snap-mandatory auto-cols-[78%] grid-flow-col gap-5 overflow-x-auto pb-3 sm:auto-cols-[46%] lg:grid-flow-row lg:grid-cols-3 lg:overflow-visible lg:pb-0" aria-label="The three pages, in reading order">
+          {EXAMPLE_PAGES.map((page, index) => (
+            <li key={page.src} className="snap-start">
+              <a href={page.src} className="group block" aria-label={`Open page ${index + 1} full size`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={page.src}
+                  alt={page.alt}
+                  width={1000}
+                  height={1414}
+                  loading="lazy"
+                  decoding="async"
+                  className="block h-auto w-full rounded-[6px] bg-paper shadow-page transition-transform duration-[180ms] ease-[var(--ease-out)] group-hover:-translate-y-0.5"
+                />
+              </a>
+              <p className="mt-3 text-[13.5px] text-ink-3">Page {index + 1}</p>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-2 text-[14px] text-ink-3">Panels read right to left, like a printed manga.</p>
+
+        <div className="mt-16 grid items-center gap-10 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+          <video
+            className="mx-auto block w-full max-w-[400px] rounded-[14px] border border-line bg-ink shadow-float"
+            src="/example/cheek-squish.mp4"
+            poster="/example/cheek-squish-poster.jpg"
+            width={720}
+            height={960}
+            controls
+            playsInline
+            preload="none"
+            aria-label="The same story as a 44 second video with music"
+          />
+          <div>
+            <h3 className="hand text-[28px] leading-tight">And as a short video</h3>
+            <p className="mt-2 max-w-[48ch] text-ink-2">
+              <code className="font-mono text-[14px]">studio video</code> turns the lettered panels into a vertical mp4 with slow zooms and crossfades, with a song of your choice under it.
+            </p>
+            <div className="mt-6 max-w-[480px]">
+              <Command label="make the video" lines={["uv run studio video cheek-squish --audio song.m4a"]} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Bullet({ children }: { children: React.ReactNode }) {
   return (
     <li className="flex gap-3">
@@ -115,7 +199,7 @@ function Make() {
   const studioArt = hasIllo("welcome");
   const pipeArt = hasIllo("project");
   return (
-    <section id="make" className="border-t border-line bg-canvas">
+    <section id="make" className="border-t border-line">
       <div className="mx-auto max-w-[1240px] px-5 py-20 sm:px-8 md:py-28">
         <h2 className="hand text-balance max-w-[18ch] text-[36px] leading-[1.1] sm:text-[44px]">Two ways to make a story</h2>
         <p className="mt-4 max-w-[58ch] text-[17px] text-ink-2">Draw it panel by panel, or hand over a chapter and fix what you want after. Both write the same project files.</p>
@@ -173,7 +257,7 @@ function Make() {
 
 function ReadExport() {
   return (
-    <section id="export" className="border-t border-line">
+    <section id="export" className="border-t border-line bg-canvas">
       <div className="mx-auto grid max-w-[1240px] gap-10 px-5 py-20 sm:px-8 md:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] md:py-24">
         <h2 className="hand text-balance text-[36px] leading-[1.1] sm:text-[44px]">Read it, then print it</h2>
         <dl className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
@@ -202,13 +286,13 @@ function ReadExport() {
 function Agents() {
   const art = hasIllo("ai");
   return (
-    <section id="agents" className="border-t border-line bg-canvas">
+    <section id="agents" className="border-t border-line">
       <div className={`mx-auto grid max-w-[1240px] items-center gap-12 px-5 py-20 sm:px-8 md:py-28 ${art ? "lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]" : ""}`}>
         {art ? <Illo name="ai" className="mx-auto max-w-[460px]" /> : null}
         <div className="min-w-0">
           <h2 className="hand text-balance max-w-[16ch] text-[36px] leading-[1.1] sm:text-[44px]">Let your AI hold the pen</h2>
           <p className="mt-4 max-w-[54ch] text-[17px] text-ink-2">
-            Claude Code, Codex or any MCP client drives the studio through 24 tools: it writes prompts, draws panels, reads your notes and runs pipeline stages. You pick and star in the app.
+            Claude Code, Codex or any MCP client drives the studio through 26 tools: it writes prompts, draws panels, reads your notes and runs pipeline stages. You pick and star in the app.
           </p>
           <figure className="mt-8 max-w-[480px]">
             <blockquote className="relative rounded-[22px] border-[1.5px] border-ink bg-paper px-5 py-3.5 text-[16px] leading-snug">
@@ -238,7 +322,7 @@ const SPECS = [
 function Requirements() {
   const art = hasIllo("mac") || hasIllo("model");
   return (
-    <section id="mac" className="border-t border-line">
+    <section id="mac" className="border-t border-line bg-canvas">
       <div className={`mx-auto grid max-w-[1240px] items-center gap-12 px-5 py-20 sm:px-8 md:py-28 ${art ? "lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]" : ""}`}>
         <div className="min-w-0">
           <h2 className="hand text-balance max-w-[18ch] text-[36px] leading-[1.1] sm:text-[44px]">Runs on the Mac in front of you</h2>
@@ -265,7 +349,7 @@ function Requirements() {
 
 function Start() {
   return (
-    <section id="start" className="border-t border-line bg-canvas">
+    <section id="start" className="border-t border-line">
       <div className="mx-auto max-w-[860px] px-5 py-20 sm:px-8 md:py-28">
         <h2 className="hand text-balance text-[36px] leading-[1.1] sm:text-[44px]">Get started</h2>
         <p className="mt-4 max-w-[58ch] text-[17px] text-ink-2">
@@ -342,6 +426,7 @@ export default function Home() {
       <Nav />
       <main>
         <Hero />
+        <Example />
         <Make />
         <ReadExport />
         <Agents />
