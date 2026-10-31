@@ -44,6 +44,8 @@ function scopedCss(id) {
     // Ink outlines on every solid, like a pen drawing; the lit part keeps the accent.
     `#${id} .iso-edge[data-tone]{stroke:var(--anatomy-hi)}`,
     `#${id} .iso-solid[data-lit]>.iso-edge[data-tone]{stroke:var(--anatomy-lit)}`,
+    // A black part (binder clip): darker paper and shades, lines stay ink.
+    `#${id} .ob-dark{--anatomy-paper:#3a3a3f;--anatomy-top:#5a5a60;--anatomy-shade-0:#232326;--anatomy-shade-1:#2c2c30;--anatomy-shade-2:#35353a;--anatomy-shade-3:#414147;--anatomy-lo:#77777d;--anatomy-mid:#8f8f95}`,
     // A lit tube (class ob-lit on its group) is filled with the accent.
     `#${id} .ob-lit .tb-body{fill:${ACCENT}}#${id} .ob-lit .tb-shine{fill:#ec8a76}#${id} .ob-lit .tb-shade{fill:#a9351f}`,
   ].join("");
@@ -57,7 +59,7 @@ export function figure({ name, label, halo, body, seed = 3, wobble = 1.6 }) {
   const id = `ob-${name}`;
   const defs = [
     `<filter id="hand-${name}" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="${seed}"/><feDisplacementMap in="SourceGraphic" scale="${wobble}"/></filter>`,
-    `<filter id="${id}-soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="9"/></filter>`,
+    `<filter id="${id}-soft" filterUnits="userSpaceOnUse" x="-40" y="-40" width="${WIDTH + 80}" height="${HEIGHT + 80}"><feGaussianBlur stdDeviation="9"/></filter>`,
   ].join("");
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" id="${id}" class="iso-svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="${label}">`,
