@@ -78,24 +78,15 @@ fi
 
 [[ "$(uname -m)" == "arm64" ]] || fail "build on Apple Silicon (this is $(uname -m))"
 
-VERSION="$(node -p "require('./app/src-tauri/tauri.conf.json').version")"
-PKG_VERSION="$(node -p "require('./app/package.json').version")"
-CARGO_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' app/src-tauri/Cargo.toml | head -1)"
+# scripts/version.sh is the one reader/writer of the version (tauri.conf.json, package.json files,
+# Cargo.toml/.lock, pyproject.toml/uv.lock, the website's DOWNLOAD.version).
+VERSION="$(scripts/version.sh get)"
 TAG="v$VERSION"
-if [[ "$VERSION" == "$PKG_VERSION" && "$VERSION" == "$CARGO_VERSION" ]]; then
-  ok "version $VERSION (tauri.conf.json, app/package.json, Cargo.toml)"
+if VCHECK="$(scripts/version.sh check 2>&1)"; then
+  ok "version $VERSION in every file (scripts/version.sh check)"
 else
-  fail "versions differ: tauri.conf.json=$VERSION app/package.json=$PKG_VERSION Cargo.toml=$CARGO_VERSION"
-fi
-SITE_VERSION="$(node -e '
-  const s = require("fs").readFileSync("website/components/site.ts", "utf8");
-  const m = s.match(/DOWNLOAD\s*=\s*\{[^}]*?version:\s*"([^"]+)"/);
-  console.log(m ? m[1] : "");
-')"
-if [[ "$SITE_VERSION" == "$VERSION" ]]; then
-  ok "website download version $SITE_VERSION (website/components/site.ts)"
-else
-  warn "website/components/site.ts DOWNLOAD.version is '$SITE_VERSION', expected $VERSION (the site shows the wrong version)"
+  printf '%s\n' "$VCHECK" | sed 's/^/      /'
+  fail "versions differ (fix with: scripts/version.sh set $VERSION)"
 fi
 
 # In a dry run the git checks only warn, so the build can be tried from a branch.
