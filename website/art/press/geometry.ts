@@ -417,7 +417,7 @@ export const GANTRY = {
   far: carriageOf(-RAIL_Y, false),
   near: carriageOf(RAIL_Y, true),
   bridge: slabOf(BRIDGE, BRIDGE_Z, BRIDGE_H, P, 3, 0.8),
-  bridgeGroove: lineOnTop([0, BRIDGE.y + 4], [0, BRIDGE.y + BRIDGE.d - 4], BRIDGE_Z + BRIDGE_H, P),
+  bridgeGroove: lineOnTop([0, BRIDGE.y], [0, BRIDGE.y + BRIDGE.d], BRIDGE_Z + BRIDGE_H, P),
   bridgeScrews: [-100, -50, 0, 50, 100].flatMap((y) => [at([-3, y, BRIDGE_Z + BRIDGE_H]), at([3, y, BRIDGE_Z + BRIDGE_H])]),
   strip: slabOf(RAIL_STRIP, BRIDGE_Z + 2.5, 4, P, 2),
   stripScrews: [-90, -45, 0, 45, 90].map((y) => at([RAIL_STRIP.x + RAIL_STRIP.w, y, BRIDGE_Z + 4.5])),
