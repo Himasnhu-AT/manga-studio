@@ -19,13 +19,14 @@ The `.app` and the DMG are both notarized and stapled, so Gatekeeper accepts the
 
 The `Developer ID Application: Himanshu . (38QXSRV6AP)` certificate is already in the login
 keychain. Notarization needs credentials stored once in a notarytool keychain profile named
-`manga-studio-notary`. Use either an app-specific password or an API key.
+`xcnotarize`, the same one `~/bin/xcnotarize setup` creates, so a Mac already set up for other
+apps needs nothing more. Otherwise use either an app-specific password or an API key.
 
 **App-specific password.** Create one at appleid.apple.com > Sign-In and Security > App-Specific
 Passwords, then run:
 
 ```bash
-xcrun notarytool store-credentials manga-studio-notary --apple-id <your Apple ID email> --team-id 38QXSRV6AP
+xcrun notarytool store-credentials xcnotarize --apple-id <your Apple ID email> --team-id 38QXSRV6AP
 ```
 
 **App Store Connect API key.** Create one at App Store Connect > Users and Access > Integrations >
@@ -33,11 +34,11 @@ Team Keys with the Developer role, download `AuthKey_<KEYID>.p8` (it can be down
 then run:
 
 ```bash
-xcrun notarytool store-credentials manga-studio-notary --key ~/path/AuthKey_<KEYID>.p8 --key-id <KEYID> --issuer <ISSUER UUID>
+xcrun notarytool store-credentials xcnotarize --key ~/path/AuthKey_<KEYID>.p8 --key-id <KEYID> --issuer <ISSUER UUID>
 ```
 
 notarytool asks for the secret and keeps it in the login keychain; it never goes into the repo.
-Check it with `xcrun notarytool history --keychain-profile manga-studio-notary`. To use a profile
+Check it with `xcrun notarytool history --keychain-profile xcnotarize`. To use a profile
 with another name, set `NOTARY_PROFILE`.
 
 ## Cut a release: `scripts/deploy.sh` (the normal path)
@@ -53,7 +54,7 @@ It runs these steps and stops at the first failure:
 
 1. **Preflight.** You are on `main`, the tree is clean, and `main` isn't behind `origin/main`. The
    tag and the GitHub release are free, `gh` is logged in, the Developer ID identity is in the
-   keychain and the `manga-studio-notary` profile works. Then `uv run pytest -q tests/`, the app
+   keychain and the `xcnotarize` profile works. Then `uv run pytest -q tests/`, the app
    typecheck and build, and the website build.
 2. **Version.** `scripts/version.sh set X.Y.Z` writes the version everywhere it lives:
    `tauri.conf.json`, `app/package.json`, `Cargo.toml` and its `Cargo.lock` entry, `pyproject.toml`
@@ -124,7 +125,7 @@ The script stops before building if any of these fails:
 - the git tree is clean, you are on `main`, and `vX.Y.Z` isn't a tag yet, locally or on origin
 - `gh` is logged in (needed for `--publish`)
 - the Developer ID identity is in the keychain
-- the `manga-studio-notary` profile works (needed unless `--dry-run`)
+- the `xcnotarize` profile works (needed unless `--dry-run`)
 - for `--publish`: `HEAD` is `origin/main`, and the CHANGELOG has a section for the version
 
 In `--dry-run` the git checks only warn, so you can try a build from a branch.

@@ -13,7 +13,7 @@
 #
 # Environment:
 #   SIGNING_IDENTITY    codesign identity (default: the "Developer ID Application ... (38QXSRV6AP)" in the keychain)
-#   NOTARY_PROFILE      notarytool keychain profile (default: manga-studio-notary)
+#   NOTARY_PROFILE      notarytool keychain profile (default: xcnotarize)
 #   In --ci mode, notarization reads APPLE_API_KEY + APPLE_API_ISSUER + APPLE_API_KEY_PATH,
 #   or APPLE_ID + APPLE_PASSWORD + APPLE_TEAM_ID.
 #
@@ -28,7 +28,7 @@ set -euo pipefail
 TEAM_ID="38QXSRV6AP"
 TARGET="aarch64-apple-darwin"
 STABLE_DMG="Manga-Studio-macOS-arm64.dmg"
-NOTARY_PROFILE="${NOTARY_PROFILE:-manga-studio-notary}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-xcnotarize}"
 
 DRY_RUN=0
 PUBLISH=0

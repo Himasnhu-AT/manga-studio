@@ -24,13 +24,13 @@
 #   --notes-file F    use F as the GitHub release notes instead of the CHANGELOG section
 #                     (CHANGELOG.md is still updated)
 #
-# Environment: NOTARY_PROFILE (default manga-studio-notary), SIGNING_IDENTITY, VISUAL/EDITOR.
+# Environment: NOTARY_PROFILE (default xcnotarize), SIGNING_IDENTITY, VISUAL/EDITOR.
 # Secrets are never printed: notarytool and gh read them from the keychain.
 
 set -euo pipefail
 
 TEAM_ID="38QXSRV6AP"
-NOTARY_PROFILE="${NOTARY_PROFILE:-manga-studio-notary}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-xcnotarize}"
 STABLE_DMG="Manga-Studio-macOS-arm64.dmg"
 
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; }
