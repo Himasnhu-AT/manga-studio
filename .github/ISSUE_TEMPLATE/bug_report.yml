@@ -1,0 +1,41 @@
+name: Bug report
+description: Something in the app, backend, pipeline or MCP bridge doesn't work.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open the sample story\n2. ..."
+  - type: input
+    id: version
+    attributes:
+      label: Manga Studio version
+      placeholder: "0.2.0 (download) or a commit hash"
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac
+      placeholder: "M2 Pro, 32 GB, macOS 15.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options: [Desktop app, Studio, Pipeline, Reader or export, MCP bridge or agents, Model download or generation, Website, Other]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The backend log (the app shows its path in the backend banner) or terminal output. Remove anything private.
+      render: text

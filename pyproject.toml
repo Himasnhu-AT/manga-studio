@@ -1,7 +1,7 @@
 [project]
 name = "manga-studio"
-version = "0.1.0"
-description = "Local manga/webtoon panel studio: Qwen-Image-2.1 on Apple Silicon (mflux), driven by Claude Code, viewed in a dashboard."
+version = "0.2.0"
+description = "Local manga and webtoon studio for Apple Silicon: Qwen-Image 2.1 draws the panels, you or your AI agent (over MCP) direct them."
 license = "BSD-3-Clause"
 requires-python = ">=3.12,<3.13"
 dependencies = [
