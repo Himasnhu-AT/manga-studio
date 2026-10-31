@@ -1,0 +1,182 @@
+@import "tailwindcss";
+
+/*
+ * Tokens copied from the app (app/src/styles.css). Light only, one accent: vermilion.
+ * Radius scale: controls 8px, surfaces 14px.
+ */
+@theme inline {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-hand: var(--font-kalam), "Geist", cursive;
+}
+
+@theme {
+  --color-canvas: #f4f4f2;
+  --color-paper: #fcfcfb;
+  --color-ink: #17171a;
+  --color-ink-2: #55555c;
+  --color-ink-3: #8a8a92;
+  --color-line: #e6e6e3;
+  --color-line-2: #d6d6d2;
+  --color-wash: #efefec;
+  --color-accent: #d2452f;
+  --color-accent-ink: #b5371f;
+  --color-accent-wash: #fbeae6;
+
+  --radius-control: 8px;
+  --radius-surface: 14px;
+
+  --shadow-float: 0 1px 0 rgb(23 23 26 / 0.04), 0 8px 24px -8px rgb(40 36 30 / 0.16);
+  --shadow-page: 0 1px 2px rgb(40 36 30 / 0.06), 0 12px 32px -12px rgb(40 36 30 / 0.18);
+}
+
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-press: 120ms;
+  --dur-pop: 180ms;
+  color-scheme: light;
+}
+
+html {
+  background: var(--color-paper);
+  scroll-behavior: smooth;
+  scroll-padding-top: 80px;
+}
+
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-accent-wash);
+  color: var(--color-ink);
+}
+
+/* Hand-lettered headings, as in the app's onboarding. */
+.hand {
+  font-family: var(--font-hand);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* Buttons and links: color and transform only, short, no bounce. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-control);
+  font-size: 14.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-pop) var(--ease-out),
+    border-color var(--dur-pop) var(--ease-out),
+    color var(--dur-pop) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn-primary {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+.btn-primary:hover {
+  background: #2c2c31;
+}
+.btn-quiet {
+  color: var(--color-ink);
+  border: 1px solid var(--color-line-2);
+  background: var(--color-paper);
+}
+.btn-quiet:hover {
+  background: var(--color-wash);
+}
+
+.link {
+  color: var(--color-ink-2);
+  transition: color var(--dur-pop) var(--ease-out);
+}
+.link:hover {
+  color: var(--color-ink);
+}
+
+/* The vermilion underline used once per heading for emphasis. */
+.mark {
+  background-image: linear-gradient(transparent 56%, var(--color-accent-wash) 56%, var(--color-accent-wash) 84%, transparent 84%);
+  white-space: nowrap;
+}
+
+/* The share card renders the hero figure without its hover hint. */
+.og-card .iso-plate-corner[data-corner="hint"] {
+  display: none;
+}
+
+/* Copy button: the two icons cross-fade in place. */
+.copy-btn {
+  transition:
+    background-color var(--dur-pop) var(--ease-out),
+    color var(--dur-pop) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.copy-btn:active {
+  transform: scale(0.96);
+}
+.copy-icon {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+}
+.copy-icon[data-on] {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .copy-icon {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rise {
+    animation: rise 520ms var(--ease-out) both;
+    animation-delay: var(--rise-delay, 0ms);
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

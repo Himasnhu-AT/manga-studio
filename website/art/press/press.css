@@ -1,0 +1,86 @@
+/* Hero figure: the kit's light theme, tuned to the site's paper and its one vermilion accent. */
+.press.iso[data-theme="light"] {
+  --anatomy-page: #f4f4f2;
+  --anatomy-card: #fcfcfb;
+  --anatomy-paper: #fcfcfb;
+  --anatomy-text: #55555c;
+  --anatomy-strong: #17171a;
+  --anatomy-muted: #8a8a92;
+  --anatomy-hi: #2a2a2e;
+  --anatomy-mid: #85858c;
+  --anatomy-lo: #b0b0b3;
+  --anatomy-faint: #d2d2d0;
+  --anatomy-lit: #d2452f;
+  --anatomy-lit-top: #fbeae6;
+  --anatomy-lit-shade: #f4d3cb;
+  --anatomy-dot: #2a2a2e;
+  --anatomy-halo: #8a8478;
+  --anatomy-halo-opacity: 0.26;
+  --anatomy-weight: 0.69px;
+  --anatomy-mono: var(--font-mono), ui-monospace, monospace;
+}
+
+.press .iso-figure {
+  margin: 0;
+}
+
+.press .iso-plate {
+  padding: 44px 18px 40px;
+  border-radius: 14px;
+  background: var(--anatomy-card);
+  box-shadow:
+    0 0 0 1px #e6e6e3,
+    0 1px 2px rgb(40 36 30 / 0.04),
+    0 18px 48px -24px rgb(40 36 30 / 0.22);
+}
+
+.press .iso-plate-corners {
+  inset: 16px 18px;
+}
+
+.press .iso-plate-corner[data-corner="readout"] {
+  color: #b5371f;
+}
+
+.press .iso-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.press .press-border {
+  stroke-width: 0.95px;
+}
+
+.press .press-bubble {
+  fill: var(--anatomy-paper);
+  stroke: var(--anatomy-hi);
+  stroke-width: 0.8px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.press-stage {
+  outline: none;
+  touch-action: pan-y;
+  border-radius: 10px;
+}
+
+.press-stage:focus-visible {
+  outline: 1.5px solid #d2452f;
+  outline-offset: 6px;
+}
+
+@media (max-width: 560px) {
+  .press .iso-plate {
+    padding: 34px 0 36px;
+    overflow: hidden;
+  }
+  .press .iso-svg {
+    width: 112%;
+    max-width: none;
+    margin: 0 -6%;
+  }
+  .press .iso-plate-corner[data-corner="hint"] {
+    display: none;
+  }
+}
