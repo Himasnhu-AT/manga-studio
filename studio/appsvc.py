@@ -1,6 +1,7 @@
 """App-level services for the desktop UI: settings, system check, model cache/download, agent integrations.
 
-Settings live in ROOT/.studio/settings.json (gitignored) so they travel with the checkout, not the user.
+Settings live in HOME_DIR/settings.json: ROOT/.studio/ in a checkout (gitignored, so they travel with the
+checkout), ~/Library/Application Support/Manga Studio/ in the installed app (STUDIO_HOME / STUDIO_SETTINGS).
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ import copy
 import json
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -19,9 +21,9 @@ from pathlib import Path
 
 import httpx
 
-from studio.story import ROOT
+from studio.story import HOME_DIR, ROOT, STORIES
 
-SETTINGS_FILE = Path(os.environ.get("STUDIO_SETTINGS", ROOT / ".studio" / "settings.json"))
+SETTINGS_FILE = Path(os.environ.get("STUDIO_SETTINGS", HOME_DIR / "settings.json"))
 
 DEFAULTS = {
     "onboarded": False,
@@ -77,7 +79,8 @@ def system_info(engine: str) -> dict:
         ram = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=3).stdout.strip() or 0)
     except (OSError, ValueError, subprocess.SubprocessError):
         pass
-    free = shutil.disk_usage(str(ROOT)).free
+    disk = STORIES if STORIES.exists() else HOME_DIR if HOME_DIR.exists() else Path.home()
+    free = shutil.disk_usage(str(disk)).free
     machine = platform.machine()
     return {
         "platform": sys.platform,
@@ -189,8 +192,34 @@ def start_download(mid: str) -> dict:
 MCP_NAME = "manga-studio"
 
 
+# Env the MCP bridge needs to see the same data as this backend. Only the names that are set are
+# passed on, so in a checkout (none set) the registration is exactly `uv --directory <repo> run studio mcp`.
+MCP_ENV_KEYS = ("STUDIO_STORIES", "STUDIO_SETTINGS", "STUDIO_HOME", "UV_PROJECT_ENVIRONMENT", "PYTHONPYCACHEPREFIX")
+
+
 def mcp_command() -> list[str]:
+    # The installed app writes a launcher script outside its (read-only, signed) bundle and tells us
+    # where; it runs `uv run --frozen --project <bundle>/backend studio mcp` with the right env.
+    launcher = os.environ.get("STUDIO_MCP_LAUNCHER")
+    if launcher:
+        return [launcher]
     return ["uv", "--directory", str(ROOT), "run", "studio", "mcp"]
+
+
+def mcp_env() -> dict[str, str]:
+    return {k: os.environ[k] for k in MCP_ENV_KEYS if os.environ.get(k)}
+
+
+def mcp_add_command(agent: str) -> list[str]:
+    """The exact `claude mcp add` / `codex mcp add` that connect() runs (and the app shows)."""
+    env = mcp_env()
+    if agent == "claude":
+        flags = [a for k, v in env.items() for a in ("-e", f"{k}={v}")]
+        return ["claude", "mcp", "add", "--scope", "user", MCP_NAME, *flags, "--", *mcp_command()]
+    if agent == "codex":
+        flags = [a for k, v in env.items() for a in ("--env", f"{k}={v}")]
+        return ["codex", "mcp", "add", MCP_NAME, *flags, "--", *mcp_command()]
+    raise KeyError(agent)
 
 
 def _run(cmd: list[str], timeout: float = 8) -> tuple[bool, str]:
@@ -250,25 +279,27 @@ def _ollama(url: str) -> dict:
 
 def integrations() -> dict:
     s = load_settings()
-    cmd = mcp_command()
+    cmd, env = mcp_command(), mcp_env()
     with ThreadPoolExecutor(2) as ex:  # the two CLIs are slow; ask them at the same time
         claude, codex = ex.map(_agent, ["claude", "codex"])
     return {
         "claude": claude,
         "codex": codex,
         "ollama": _ollama(s["llm"]["ollama_url"]),
-        "mcp": {"command": cmd, "json": {"mcpServers": {MCP_NAME: {"command": cmd[0], "args": cmd[1:]}}}},
+        "mcp": {
+            "command": cmd,
+            "env": env,
+            "add": {a: shlex.join(mcp_add_command(a)) for a in ("claude", "codex")},
+            "json": {"mcpServers": {MCP_NAME: {"command": cmd[0], "args": cmd[1:], **({"env": env} if env else {})}}},
+        },
     }
 
 
 def connect(agent: str) -> dict:
     if agent not in ("claude", "codex"):
         raise KeyError(agent)
-    if agent == "claude":
-        cmd = ["claude", "mcp", "add", "--scope", "user", MCP_NAME, "--", *mcp_command()]
-    else:
-        cmd = ["codex", "mcp", "add", MCP_NAME, "--", *mcp_command()]
-    shown = " ".join(cmd)
+    cmd = mcp_add_command(agent)
+    shown = shlex.join(cmd)
     state = _agent(agent, fresh=True)
     if not state["installed"]:
         return {"ok": False, "command": shown, "output": f"{agent} CLI not found on PATH"}
