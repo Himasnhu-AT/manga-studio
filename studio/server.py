@@ -764,6 +764,56 @@ async def upload_ref(slug: str, file: UploadFile = File(...)):
     return {"name": dest.name}
 
 
+# ---- your own art: import a drawing as a panel version --------------------------------
+
+ART_EXT = IMAGE_EXT | {".psd", ".tif", ".tiff", ".bmp"}
+ART_MAX_SIDE = 3200  # scans at 600 dpi are huge; this keeps line work crisp and the model happy
+
+
+def _read_art(data: bytes):
+    """Any image (PSD flattened) -> RGB on white paper, at most ART_MAX_SIDE on the long side."""
+    from PIL import Image
+
+    try:
+        im = Image.open(io.BytesIO(data))
+        im.load()
+    except Exception:
+        raise HTTPException(400, "that file isn't a readable image")
+    if im.mode in ("RGBA", "LA", "PA") or (im.mode == "P" and "transparency" in im.info):
+        im = im.convert("RGBA")
+        paper = Image.new("RGBA", im.size, (255, 255, 255, 255))
+        paper.alpha_composite(im)
+        im = paper
+    im = im.convert("RGB")
+    if max(im.size) > ART_MAX_SIDE:
+        im.thumbnail((ART_MAX_SIDE, ART_MAX_SIDE), Image.LANCZOS)
+    return im
+
+
+def save_art_version(s: st.Story, pid: str, img, meta: dict, pick: bool = True) -> str:
+    """Write `img` as the panel's next version (seed 0) with a .json saying where it came from; pick it."""
+    out = st.next_version_name(s, pid, 0)
+    img.save(out)
+    full = {"seed": 0, "width": img.width, "height": img.height, "engine": "import", "created": time.strftime("%Y-%m-%d %H:%M:%S"), **meta}
+    out.with_suffix(".json").write_text(json.dumps(full, indent=2))
+    if pick:
+        st.update_state(s, lambda state: state["picks"].__setitem__(pid, out.name))
+    bump()
+    return out.name
+
+
+@app.post("/api/stories/{slug}/panels/{pid}/import")
+async def import_art(slug: str, pid: str, file: UploadFile = File(...)):
+    """Your drawing (sketch, scan, inks, finished art) becomes a new version of the panel and is put in use.
+    Nothing is generated. PNG, JPG, WebP, PSD (flattened), TIFF, BMP."""
+    s = _edit_panel_story(slug, pid)
+    name = Path(file.filename or "art.png").name
+    if Path(name).suffix.lower() not in ART_EXT:
+        raise HTTPException(400, f"images only ({', '.join(sorted(ART_EXT))})")
+    img = _read_art(await file.read())
+    return {"file": save_art_version(s, pid, img, {"imported": name})}
+
+
 # ---- copilot ---------------------------------------------------------------
 
 

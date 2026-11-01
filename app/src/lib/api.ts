@@ -357,6 +357,11 @@ export const Api = {
   autoPages: (slug: string, per_page?: number) => api<{ pages: Page[] }>(`${s(slug)}/pages/auto`, { body: { per_page } }),
   putCast: (slug: string, cid: string, c: CastMember) => api(`${s(slug)}/cast/${cid}`, { method: "PUT", body: c }),
   deleteCast: (slug: string, cid: string) => api(`${s(slug)}/cast/${cid}`, { method: "DELETE" }),
+  importArt: (slug: string, pid: string, file: File) => {
+    const f = new FormData();
+    f.append("file", file);
+    return api<{ file: string }>(`${s(slug)}/panels/${pid}/import`, { form: f });
+  },
   uploadRef: (slug: string, file: File) => {
     const f = new FormData();
     f.append("file", file);

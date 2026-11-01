@@ -10,10 +10,11 @@ import { Api, type Page, type PageSlot, type Panel, type SlotSubject, type Story
 import { attempt, useApp } from "../../lib/store";
 import { artFrame, autoCrop, borderFrac, clampBox, findGutters, moveGutter, orderSlots, pageDims, panelSize, polyClip, slotRect, stripPanels, type Gutter } from "../../lib/layout";
 import { PageBackground, PanelView } from "../../ui/PanelView";
-import { Button, cx, spring } from "../../ui/kit";
+import { cx, spring } from "../../ui/kit";
 import { CanvasCtx } from "./canvasCtx";
 import { LetteringEditor } from "./LetteringEditor";
 import { useStudio } from "./studioState";
+import { ImportArtButton, importArt, isArtFile } from "./importArt";
 import type { LetteringApi } from "./useLettering";
 
 export const PAGE_BASE = 720; // CSS px width of a page at 100%
@@ -268,8 +269,33 @@ function EditablePanel({
       }
     }
   };
+  const [fileOver, setFileOver] = useState(false);
   return (
-    <div className={cx("relative size-full", className)} onPointerDown={select}>
+    <div
+      className={cx("relative size-full", className)}
+      onPointerDown={select}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) {
+          e.preventDefault();
+          e.stopPropagation();
+          setFileOver(true);
+        }
+      }}
+      onDragLeave={() => setFileOver(false)}
+      onDrop={(e) => {
+        setFileOver(false);
+        if (!e.dataTransfer.files.length || !Array.from(e.dataTransfer.files).some(isArtFile)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        useApp.getState().selectPanel(panel.id);
+        void importArt(story.slug, panel.id, e.dataTransfer.files);
+      }}
+    >
+      {fileOver && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-accent/15 ring-2 ring-accent ring-inset">
+          <span className="rounded-full bg-ink px-2.5 py-1 text-[12px] font-medium text-paper">Drop to use your drawing</span>
+        </div>
+      )}
       <PanelView
         slug={story.slug}
         panel={panel}
@@ -293,16 +319,19 @@ function EditablePanel({
 function NotDrawn({ story, panel }: { story: StoryDetail; panel: Panel }) {
   const [busy, setBusy] = useState(false);
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-[#f7f7f5] text-center">
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-[#f7f7f5] p-3 text-center">
       <ImageSquare size={22} className="text-ink-3" />
-      <p className="text-[12.5px] text-ink-2">Not drawn yet</p>
-      {panel.plan_error ? (
-        <p className="max-w-[80%] text-[11.5px] text-warn">{panel.plan_error}</p>
-      ) : (
-        <Button
-          size="sm"
-          icon={<Sparkle size={13} />}
-          loading={busy}
+      <p className="text-[12.5px] font-medium text-ink">Drop your sketch or scan here</p>
+      <ImportArtButton
+        slug={story.slug}
+        pid={panel.id}
+        className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-control)] bg-ink px-2.5 text-[12px] font-medium text-paper"
+      />
+      {panel.plan_error ? null : (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-[11.5px] text-ink-2 hover:text-ink disabled:opacity-50"
+          disabled={busy}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={async () => {
             setBusy(true);
@@ -310,8 +339,8 @@ function NotDrawn({ story, panel }: { story: StoryDetail; panel: Panel }) {
             setBusy(false);
           }}
         >
-          Generate
-        </Button>
+          <Sparkle size={12} /> {busy ? "Queuing…" : "Or generate with AI"}
+        </button>
       )}
     </div>
   );
@@ -451,6 +480,16 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
     onChange({ ...page, panels: slots });
   };
 
+  /** A drawing dropped on an empty slot: a new panel is made for it and placed in the slot. */
+  const dropArtIntoEmpty = async (i: number, files: FileList) => {
+    const name = Array.from(files).find(isArtFile)?.name.replace(/\.[^.]+$/, "") ?? "Drawing";
+    const made = await attempt(() => Api.addPanel(story.slug, { title: name }));
+    if (!made) return;
+    onChange({ ...page, panels: page.panels.map((x, j) => (j === i ? { ...x, panel: made.id } : x)) });
+    useApp.getState().selectPanel(made.id);
+    await importArt(story.slug, made.id, files);
+  };
+
   const black = page.paper === "black";
   const sel = layoutMode && slotSel !== null ? page.panels[slotSel] : undefined;
 
@@ -474,7 +513,7 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
               key={i}
               className="absolute"
               onDragOver={(e) => {
-                if (e.dataTransfer.types.includes("application/x-panel")) {
+                if (e.dataTransfer.types.includes("application/x-panel") || (!p && e.dataTransfer.types.includes("Files"))) {
                   e.preventDefault();
                   setDropAt(i);
                 }
@@ -484,6 +523,10 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
                 const pid = e.dataTransfer.getData("application/x-panel");
                 setDropAt(null);
                 if (pid) assign(i, pid);
+                else if (!p && Array.from(e.dataTransfer.files).some(isArtFile)) {
+                  e.preventDefault();
+                  void dropArtIntoEmpty(i, e.dataTransfer.files);
+                }
               }}
               onPointerDownCapture={layoutMode ? (e) => onSlotDown(e, i, p, slotAspect) : undefined}
               style={{ left: `${bx * 100}%`, top: `${by * 100}%`, width: `${bw * 100}%`, height: `${bh * 100}%`, cursor: picking ? "crosshair" : layoutMode && p ? "move" : undefined }}
@@ -492,7 +535,7 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
                 <EditablePanel story={story} panel={p} lettering={lettering} slotAspect={slotAspect} poly={slot.poly} borderPx={mode === "cutout" ? 0 : borderFrac(slot.border) * PAGE_BASE} subjectMode={mode} />
               ) : (
                 <div className="flex size-full items-center justify-center border border-dashed border-line-2 bg-[#f7f7f5] text-[12px] text-ink-3" style={{ clipPath: polyClip(slot.poly) }}>
-                  {slot.panel ? `Missing panel ${slot.panel}` : "Drop a panel here"}
+                  {slot.panel ? `Missing panel ${slot.panel}` : "Drop a drawing or a panel here"}
                 </div>
               )}
               <SelectionRing poly={slot.poly} on={layoutMode ? slotSel === i : !!p && selected === p.id} />

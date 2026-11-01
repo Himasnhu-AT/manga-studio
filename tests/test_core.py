@@ -364,3 +364,22 @@ def test_page_devices_validate_and_export(sample):
     # clearing the cut-out falls back to a normal framed panel
     assert client.post(f"/api/stories/{sample}/panels/p01/subject", json={"clear": True}).json()["subject"] is None
     assert client.post(f"/api/stories/{sample}/export", json={"formats": ["png"]}).status_code == 200
+
+
+def test_import_art_becomes_picked_version(sample):
+    """Your own drawing goes straight in as a version (transparent -> white paper, huge scans shrunk)."""
+    buf = io.BytesIO()
+    sketch = Image.new("RGBA", (4000, 5000), (0, 0, 0, 0))
+    ImageDraw.Draw(sketch).line([(100, 100), (3900, 4900)], fill=(30, 60, 200, 255), width=20)
+    sketch.save(buf, "PNG")
+    r = client.post(f"/api/stories/{sample}/panels/p03/import", files={"file": ("rough page.png", buf.getvalue(), "image/png")})
+    assert r.status_code == 200, r.text
+    f = r.json()["file"]
+    s = st.load(sample)
+    assert st.picked_version(s, "p03") == f and f.endswith("-s0.png")
+    im = Image.open(s.dir / "out" / "p03" / f)
+    assert max(im.size) == server.ART_MAX_SIDE and im.mode == "RGB" and im.getpixel((5, 5)) == (255, 255, 255)
+    meta = json.loads((s.dir / "out" / "p03" / f).with_suffix(".json").read_text())
+    assert meta["engine"] == "import" and meta["imported"] == "rough page.png"
+    assert client.post(f"/api/stories/{sample}/panels/p03/import", files={"file": ("notes.txt", b"hi", "text/plain")}).status_code == 400
+    assert client.post(f"/api/stories/{sample}/panels/p03/import", files={"file": ("bad.png", b"nope", "image/png")}).status_code == 400
