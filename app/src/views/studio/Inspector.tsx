@@ -28,6 +28,7 @@ import { CastStudio } from "./CastStudio";
 import { Copilot } from "./Copilot";
 import { Versions } from "./Versions";
 import { useStudio } from "./studioState";
+import { STAGE_META, STAGES } from "../../lib/stages";
 import { Chip, Collapse, Slider, Thumb, refName, refThumb, useSyncedText } from "./side-common";
 
 export function Inspector({ story, panel }: { story: StoryDetail; panel: Panel | null }) {
@@ -180,6 +181,7 @@ function PanelInspector({ story, panel, openCast }: { story: StoryDetail; panel:
       </div>
 
       <div className="flex flex-col gap-3 px-4 pb-4">
+        {panel.strip !== false && <StageRow panel={panel} patch={patch} />}
         <Versions story={story} panel={panel} onUseSource={setSource} />
         <GenerateRow story={story} panel={panel} />
       </div>
@@ -248,6 +250,34 @@ function PanelInspector({ story, panel, openCast }: { story: StoryDetail; panel:
         <AddNote story={story} panel={panel.id} />
       </Collapse>
     </>
+  );
+}
+
+/** The panel's production stage: Name, Pencils, Inks, Blacks, Tone, Finish, Letters. Click again to clear. */
+function StageRow({ panel, patch }: { panel: Panel; patch: (b: Record<string, unknown>) => unknown }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="type-label">Stage</span>
+      <div className="grid grid-cols-4 gap-1">
+        {STAGES.map((s) => {
+          const on = panel.stage === s;
+          const m = STAGE_META[s];
+          return (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={on}
+              title={m.hint}
+              onClick={() => void patch({ stage: on ? null : s })}
+              className={cx("pressable h-7 rounded-[7px] text-[11.5px] font-medium", on ? "font-semibold" : "border border-line-2 text-ink-2 hover:text-ink")}
+              style={on ? { background: m.bg, color: m.fg } : undefined}
+            >
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

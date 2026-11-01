@@ -10,6 +10,7 @@ import { PanelView } from "../../ui/PanelView";
 import { Badge, Button, IconButton, Segmented, cx } from "../../ui/kit";
 import { ART_ACCEPT } from "./importArt";
 import { startScan } from "./ScanReview";
+import { STAGE_META, stageCounts } from "../../lib/stages";
 
 const THUMB_LAYERS = { background: true, art: true, fx: false, lettering: false };
 
@@ -71,6 +72,8 @@ export function Rail({
           />
         )}
       </div>
+
+      <StageProgress story={story} />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {mode === "page" && (
@@ -258,7 +261,17 @@ function PanelList({ story, selected, unplaced, onChoose }: { story: StoryDetail
               <span className="num text-[11.5px] text-ink-2">{p.id}</span>
               <span className="truncate text-[12.5px] font-medium">{p.title || "Untitled"}</span>
             </span>
-            {p.strip === false ? <Badge>Ref</Badge> : unplaced.has(p.id) ? <Badge tone="warn">Unplaced</Badge> : !p.pick ? <Badge>Empty</Badge> : null}
+            {p.strip === false ? (
+              <Badge>Ref</Badge>
+            ) : unplaced.has(p.id) ? (
+              <Badge tone="warn">Unplaced</Badge>
+            ) : p.stage ? (
+              <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold" style={{ background: STAGE_META[p.stage].bg, color: STAGE_META[p.stage].fg }} title={STAGE_META[p.stage].hint}>
+                {STAGE_META[p.stage].label}
+              </span>
+            ) : !p.pick && !Object.keys(p.drawing_files ?? {}).length ? (
+              <Badge>Empty</Badge>
+            ) : null}
             <button
               className={cx(
                 "pressable flex h-6 shrink-0 items-center gap-1 rounded-full px-1.5 text-[11px] font-medium transition-opacity duration-150",
@@ -291,5 +304,26 @@ function PanelThumb({ story, panel }: { story: StoryDetail; panel: Panel }) {
     <span className="relative h-10 w-[30px] shrink-0 overflow-hidden rounded-[3px] bg-wash shadow-[0_0_0_0.5px_rgb(23_23_26/0.12)]">
       {panel.pick && <img src={versionUrl(story.slug, panel.id, panel.pick)} alt="" draggable={false} loading="lazy" className="size-full object-cover" />}
     </span>
+  );
+}
+
+/** How far the chapter is, by production stage: one bar, one segment per stage in order. */
+function StageProgress({ story }: { story: StoryDetail }) {
+  const { counts, unset, total } = stageCounts(story.panels);
+  if (!total) return null;
+  const done = counts.find((c) => c.stage === "letters")!.n;
+  return (
+    <div className="flex flex-col gap-1.5 border-b border-line px-3 py-2.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[12px] font-medium">Progress</span>
+        <span className="num text-[11px] text-ink-2">
+          {done}/{total} lettered
+        </span>
+      </div>
+      <div className="flex h-2 gap-px overflow-hidden rounded-full bg-wash" role="img" aria-label={counts.map((c) => `${STAGE_META[c.stage].label} ${c.n}`).join(", ") + `, no stage ${unset}`}>
+        {counts.map((c) => (c.n ? <span key={c.stage} title={`${STAGE_META[c.stage].label}: ${c.n}`} style={{ flex: c.n, background: STAGE_META[c.stage].bg }} /> : null))}
+        {unset ? <span title={`No stage: ${unset}`} style={{ flex: unset }} className="bg-[repeating-linear-gradient(45deg,#d6d6d2_0_3px,#efefec_3px_6px)]" /> : null}
+      </div>
+    </div>
   );
 }

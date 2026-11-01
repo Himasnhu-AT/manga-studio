@@ -10,6 +10,7 @@ import { useLive } from "../../lib/live";
 import { attempt } from "../../lib/store";
 import { Button, IconButton, Progress, Segmented, cx } from "../../ui/kit";
 import { useStudio } from "./studioState";
+import { REFINE_STAGE, STAGES } from "../../lib/stages";
 
 type Preset = "clean" | "inks" | "tone" | "color";
 const PRESETS: { value: Preset; label: string; title: string; strength: number }[] = [
@@ -178,7 +179,11 @@ export function Refine({ story, panel }: { story: StoryDetail; panel: Panel }) {
             onClick={async () => {
               if (!current) return;
               const ok = await attempt(() => Api.pick(story.slug, panel.id, current.file), "Using the refined version");
-              if (ok !== undefined) close();
+              if (ok === undefined) return;
+              // the panel moves on to the stage the refinement reached (never backwards)
+              const next = REFINE_STAGE[String(current.refine)];
+              if (next && STAGES.indexOf(next) > STAGES.indexOf(panel.stage ?? "name")) await attempt(() => Api.patchPanel(story.slug, panel.id, { stage: next }));
+              close();
             }}
           >
             Use this one

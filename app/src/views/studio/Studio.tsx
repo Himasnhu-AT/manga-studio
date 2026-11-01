@@ -15,6 +15,7 @@ import { ImageEditor } from "./ImageEditor";
 import { Refine } from "./Refine";
 import { DrawEditor } from "./DrawEditor";
 import { ScanReview } from "./ScanReview";
+import { StoryEditor } from "./StoryEditor";
 import { Inspector } from "./Inspector";
 import { Rail } from "./Rail";
 import { useStudio } from "./studioState";
@@ -51,6 +52,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
   const canvas = useRef<CanvasHandle>(null);
   const [castOpen, setCastOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [scriptOpen, setScriptOpen] = useState(false);
   const [letterBusy, setLetterBusy] = useState(false);
   const mode = story.format?.mode ?? "page";
 
@@ -264,7 +266,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
               </AnimatePresence>
             </div>
           </div>
-          <ActionBar onLetter={autoLetter} letterBusy={letterBusy} onCast={() => setCastOpen(true)} onExport={() => setExportOpen(true)} castCount={Object.keys(story.cast ?? {}).length} />
+          <ActionBar onLetter={autoLetter} letterBusy={letterBusy} onCast={() => setCastOpen(true)} onExport={() => setExportOpen(true)} onScript={() => setScriptOpen(true)} castCount={Object.keys(story.cast ?? {}).length} />
         </div>
 
         {mode === "page" && pages.length > 1 && <PageNav n={pages.length} i={pageIdx} onGo={setPage} />}
@@ -317,6 +319,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
 
       <CastStudio story={story} open={castOpen} onClose={() => setCastOpen(false)} />
       <ExportSheet slug={story.slug} open={exportOpen} onClose={() => setExportOpen(false)} />
+      <StoryEditor story={story} pages={pages} pageIdx={pageIdx} open={scriptOpen} onClose={() => setScriptOpen(false)} />
     </div>
   );
 }
