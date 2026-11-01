@@ -149,6 +149,19 @@ def set_pages(story: str, pages: list[dict]) -> dict:
 
 
 @server.tool()
+def refine_sketch(story: str, panel: str, preset: str = "inks", strength: float | None = None, count: int = 3, prompt: str = "", wait: bool = True) -> dict:
+    """Turn the artist's own drawing (the panel's version in use, often an import) into a cleaner stage while
+    keeping their poses and composition. preset: clean (line cleanup) | inks | tone (inks + screentone) | color.
+    strength: lower follows the drawing more closely (defaults 0.45 to 0.7 by preset). Results are new
+    versions; the user picks one. Look at them with view_image before saying they are ready."""
+    body: dict[str, Any] = {"preset": preset, "count": count, "prompt": prompt or None}
+    if strength is not None:
+        body["strength"] = strength
+    r = _api("POST", f"/api/stories/{story}/panels/{panel}/refine", json=body)
+    return {"results": _wait_jobs(r["jobs"], 1800), "source": r["source"]} if wait else r
+
+
+@server.tool()
 def cut_out_character(story: str, panel: str, point: list[float] | None = None, clear: bool = False) -> dict:
     """Cut the character out of a panel's picked version, for page slots with subject "pop" or "cutout".
     Apple Vision finds the figures; pass point [x, y] (fractions of the image) to pick one. clear=True removes it.

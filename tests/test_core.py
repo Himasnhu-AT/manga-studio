@@ -383,3 +383,22 @@ def test_import_art_becomes_picked_version(sample):
     assert meta["engine"] == "import" and meta["imported"] == "rough page.png"
     assert client.post(f"/api/stories/{sample}/panels/p03/import", files={"file": ("notes.txt", b"hi", "text/plain")}).status_code == 400
     assert client.post(f"/api/stories/{sample}/panels/p03/import", files={"file": ("bad.png", b"nope", "image/png")}).status_code == 400
+
+
+def test_refine_sketch_keeps_the_drawing_shape(sample):
+    """Refine starts from the artist's drawing, at its shape and the story's usual size, with a preset prompt."""
+    buf = io.BytesIO()
+    Image.new("RGB", (3000, 1500), "white").save(buf, "PNG")  # a wide panel sketch
+    f = client.post(f"/api/stories/{sample}/panels/p05/import", files={"file": ("wide.png", buf.getvalue(), "image/png")}).json()["file"]
+    r = client.post(f"/api/stories/{sample}/panels/p05/refine", json={"preset": "tone", "count": 1})
+    assert r.status_code == 200, r.text
+    assert r.json()["source"] == f and r.json()["strength"] == 0.6
+    job = wait_jobs(r.json()["jobs"])[0]
+    assert job["status"] == "done", job
+    plan = job["plan"]
+    assert plan["refs"][0]["version"] == f and "artist's own drawing" in plan["refs"][0]["label"]
+    assert "screentone" in plan["prompt"] and plan["width"] % 16 == 0 and abs(plan["width"] / plan["height"] - 2) < 0.05
+    assert plan["width"] * plan["height"] < 1.2 * 864 * 1152
+    meta = json.loads((st.STORIES / sample / "out" / "p05" / job["file"]).with_suffix(".json").read_text())
+    assert meta["refine"] == "tone" and meta["source"] == f
+    assert client.post(f"/api/stories/{sample}/panels/p05/refine", json={"preset": "sparkles"}).status_code == 400

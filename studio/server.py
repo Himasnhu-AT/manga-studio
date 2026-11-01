@@ -814,6 +814,59 @@ async def import_art(slug: str, pid: str, file: UploadFile = File(...)):
     return {"file": save_art_version(s, pid, img, {"imported": name})}
 
 
+# ---- refine sketch: your drawing in, a cleaner stage out ------------------------------
+
+KEEP = "Keep every pose, proportion, expression, panel composition and line placement exactly as drawn."
+REFINE_PRESETS = {
+    "clean": {"strength": 0.45, "label": "Clean lines", "prompt": f"Clean up this rough pencil sketch into crisp, clean black line art on white paper. Remove construction lines and blue pencil. {KEEP} No color, no shading, no screentone."},
+    "inks": {"strength": 0.55, "label": "Inks", "prompt": f"Ink this sketch as finished manga line art: confident black pen lines with varied line weight, solid black fills for dark hair and deep shadows, white paper. {KEEP} No color, no screentone."},
+    "tone": {"strength": 0.6, "label": "Inks + tone", "prompt": f"Finish this sketch as a printed black-and-white manga panel: clean inked lines, solid blacks and dot screentone shading. {KEEP} No color."},
+    "color": {"strength": 0.7, "label": "Full color", "prompt": f"Render this sketch as a finished full-color illustration with clean line art and soft cel shading, in the story's style. {KEEP}"},
+}
+
+
+def _render_size(src_path: Path, s: st.Story) -> tuple[int, int]:
+    """The drawing's shape at the story's usual pixel count, in multiples of 16 (a 3000 px scan would not fit in memory)."""
+    from PIL import Image
+
+    d = s.settings()
+    area = int(d.get("width", 864)) * int(d.get("height", 1152))
+    with Image.open(src_path) as im:
+        aspect = im.width / im.height
+    w = (area * aspect) ** 0.5
+    return max(256, round(w / 16) * 16), max(256, round(w / aspect / 16) * 16)
+
+
+class RefineReq(BaseModel):
+    preset: str = "inks"
+    strength: float | None = None  # lower keeps more of the drawing
+    count: int = 3
+    source: str | None = None  # version to refine (default: the one in use)
+    prompt: str | None = None  # extra direction
+
+
+@app.post("/api/stories/{slug}/panels/{pid}/refine")
+def refine_sketch(slug: str, pid: str, req: RefineReq):
+    """Turn the artist's drawing into clean lines, inks, toned inks or color, keeping their composition.
+    Each result is a new version (meta: refine, source); the drawing itself is never changed."""
+    if req.preset not in REFINE_PRESETS:
+        raise HTTPException(400, f"preset is one of {', '.join(REFINE_PRESETS)}")
+    s = _edit_panel_story(slug, pid)
+    src, path = _version_path(s, pid, req.source)
+    pr = REFINE_PRESETS[req.preset]
+    strength = max(0.2, min(1.0, req.strength if req.strength is not None else pr["strength"]))
+    prompt = pr["prompt"] + (f" {req.prompt.strip()}" if req.prompt and req.prompt.strip() else "")
+    try:
+        created, seeds = queue_from_source(
+            slug, pid, src, "img2img", prompt, strength, max(1, min(4, req.count)),
+            meta={"refine": req.preset}, size=_render_size(path, s),
+            source_label="the artist's own drawing of this panel: follow it exactly",
+        )
+    except st.StoryError as e:
+        raise HTTPException(400, str(e))
+    return {"jobs": created, "seeds": seeds, "source": src, "strength": strength}
+
+
 # ---- copilot ---------------------------------------------------------------
 
 
@@ -875,15 +928,14 @@ def _version_path(s: st.Story, pid: str, name: str | None) -> tuple[str, Path]:
     return name, s.dir / "out" / pid / name
 
 
-def queue_from_source(slug: str, pid: str, src: str, mode: str, prompt: str | None, strength: float, count: int, mask=None, meta: dict | None = None, fit_source: bool = False) -> tuple[list[int], list[int]]:
+def queue_from_source(slug: str, pid: str, src: str, mode: str, prompt: str | None, strength: float, count: int, mask=None, meta: dict | None = None, fit_source: bool = False, size: tuple[int, int] | None = None, source_label: str | None = None) -> tuple[list[int], list[int]]:
     """img2img / inpaint jobs that start from one version. The panel's own blocks, cast and refs are kept
     (the source goes in as image 1), so characters stay on model. `mask` (PIL L, white = repaint) makes it an
     inpaint: only that region changes. `fit_source` renders at the source's size (crops, extends)."""
     s = st.load(slug)
     panel = s.panel(pid)
     src_path = s.dir / "out" / pid / src
-    size = None
-    if fit_source:
+    if fit_source and size is None:
         from PIL import Image
 
         with Image.open(src_path) as im:
@@ -891,7 +943,7 @@ def queue_from_source(slug: str, pid: str, src: str, mode: str, prompt: str | No
             size = (round(im.width * f / 16) * 16, round(im.height * f / 16) * 16)
 
     def mutate(plan):
-        first = {"name": f"{pid}/{src}", "path": str(src_path), "version": src, "label": "the current panel, keep its composition and characters"}
+        first = {"name": f"{pid}/{src}", "path": str(src_path), "version": src, "label": source_label or "the current panel, keep its composition and characters"}
         refs = [first] + [r for r in plan["refs"] if r["path"] != str(src_path)]
         plan["refs"] = refs[:10]
         plan["prompt"] = _with_instruction(s.build_prompt(panel, plan["refs"]), prompt)

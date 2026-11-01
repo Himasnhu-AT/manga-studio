@@ -357,6 +357,8 @@ export const Api = {
   autoPages: (slug: string, per_page?: number) => api<{ pages: Page[] }>(`${s(slug)}/pages/auto`, { body: { per_page } }),
   putCast: (slug: string, cid: string, c: CastMember) => api(`${s(slug)}/cast/${cid}`, { method: "PUT", body: c }),
   deleteCast: (slug: string, cid: string) => api(`${s(slug)}/cast/${cid}`, { method: "DELETE" }),
+  refine: (slug: string, pid: string, b: { preset: "clean" | "inks" | "tone" | "color"; strength?: number; count?: number; source?: string; prompt?: string }) =>
+    api<{ jobs: number[]; seeds: number[]; source: string; strength: number }>(`${s(slug)}/panels/${pid}/refine`, { body: b }),
   importArt: (slug: string, pid: string, file: File) => {
     const f = new FormData();
     f.append("file", file);

@@ -12,6 +12,7 @@ import { ExportSheet } from "../ExportSheet";
 import { Canvas, PAGE_BASE, type CanvasHandle } from "./Canvas";
 import { CastStudio } from "./CastStudio";
 import { ImageEditor } from "./ImageEditor";
+import { Refine } from "./Refine";
 import { Inspector } from "./Inspector";
 import { Rail } from "./Rail";
 import { useStudio } from "./studioState";
@@ -42,7 +43,7 @@ export function Studio() {
 
 function StudioBody({ story }: { story: StoryDetail }) {
   const { panel: selectedId, page: pageIdx, setPage, selectPanel, go } = useApp();
-  const { inspector, layoutMode, editImage, setEditImage } = useStudio();
+  const { inspector, layoutMode, editImage, setEditImage, refine, setRefine } = useStudio();
   const canvas = useRef<CanvasHandle>(null);
   const [castOpen, setCastOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -109,7 +110,8 @@ function StudioBody({ story }: { story: StoryDetail }) {
   // leaving the panel (deleted, or nothing selected) ends an edit session
   useEffect(() => {
     if (editImage && !selected) setEditImage(false);
-  }, [editImage, selected, setEditImage]);
+    if (refine && !selected?.pick) setRefine(false);
+  }, [editImage, selected, setEditImage, refine, setRefine]);
 
   // ---- keyboard ----------------------------------------------------------------------
   useEffect(() => {
@@ -117,7 +119,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
     const down = (e: KeyboardEvent) => {
       if (typing(e.target)) return;
       const st = useStudio.getState();
-      if (st.editImage) return; // the image editor owns the keyboard while it is open
+      if (st.editImage || st.refine) return; // the image editor / refine view own the keyboard while open
       if (e.metaKey || e.ctrlKey) {
         if (e.key === "0") (e.preventDefault(), canvas.current?.fit(false));
         else if (e.key === "=" || e.key === "+") (e.preventDefault(), canvas.current?.zoomBy(1.25));
@@ -257,6 +259,11 @@ function StudioBody({ story }: { story: StoryDetail }) {
           {editImage && selected && (
             <motion.div key="image-editor" className="absolute inset-0 z-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
               <ImageEditor story={story} panel={selected} pageMode={mode === "page"} />
+            </motion.div>
+          )}
+          {refine && selected?.pick && (
+            <motion.div key={`refine-${selected.id}`} className="absolute inset-0 z-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+              <Refine story={story} panel={selected} />
             </motion.div>
           )}
         </AnimatePresence>

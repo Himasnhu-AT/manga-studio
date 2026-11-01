@@ -11,6 +11,7 @@ import {
   NotePencil,
   Plus,
   Selection,
+  Sparkle,
   Stack,
   Trash,
   UploadSimple,
@@ -26,6 +27,7 @@ import { Badge, Button, IconButton, Input, Progress, Segmented, Textarea, cx } f
 import { CastStudio } from "./CastStudio";
 import { Copilot } from "./Copilot";
 import { Versions } from "./Versions";
+import { useStudio } from "./studioState";
 import { Chip, Collapse, Slider, Thumb, refName, refThumb, useSyncedText } from "./side-common";
 
 export function Inspector({ story, panel }: { story: StoryDetail; panel: Panel | null }) {
@@ -267,9 +269,14 @@ function GenerateRow({ story, panel }: { story: StoryDetail; panel: Panel }) {
       )}
       <div className="flex items-center gap-2">
         <Segmented size="sm" value={String(count)} onChange={(v) => setCount(Number(v))} options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: <span className="num">{n}</span>, title: `${n} version${n > 1 ? "s" : ""}` }))} />
+        {panel.pick && (
+          <Button className="ml-auto" icon={<Sparkle size={13} weight="fill" className="text-accent" />} onClick={() => useStudio.getState().setRefine(true)} title="Turn your drawing into clean lines, inks, tone or color">
+            Refine
+          </Button>
+        )}
         <Button
           variant="primary"
-          className="ml-auto"
+          className={panel.pick ? undefined : "ml-auto"}
           loading={busy}
           disabled={!!panel.plan_error}
           onClick={async () => {

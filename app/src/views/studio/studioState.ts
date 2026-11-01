@@ -13,6 +13,8 @@ interface StudioState {
   layoutMode: boolean;
   /** Edit image mode: the selected panel's picture fills the canvas with pixel tools and the fix bar. */
   editImage: boolean;
+  /** Refine sketch: the selected panel's drawing beside its refined versions. */
+  refine: boolean;
   inspector: boolean;
   sel: Sel;
   editing: number | null; // bubble index with the inline text editor open
@@ -27,6 +29,7 @@ interface StudioState {
   toggleLayer: (k: keyof LayerToggles) => void;
   setLayoutMode: (v: boolean) => void;
   setEditImage: (v: boolean) => void;
+  setRefine: (v: boolean) => void;
   setInspector: (v: boolean) => void;
   setSel: (s: Sel) => void;
   setEditing: (i: number | null) => void;
@@ -41,6 +44,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   layers: { background: true, art: true, fx: true, lettering: true },
   layoutMode: false,
   editImage: false,
+  refine: false,
   inspector: true,
   sel: null,
   editing: null,
@@ -52,6 +56,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   toggleLayer: (k) => set({ layers: { ...get().layers, [k]: !get().layers[k] } }),
   setLayoutMode: (layoutMode) => set({ layoutMode, sel: null, editing: null, slotSel: null, pickSubject: null, ...(layoutMode ? { editImage: false } : {}) }),
   setEditImage: (editImage) => set({ editImage, sel: null, editing: null, ...(editImage ? { layoutMode: false } : {}) }),
+  setRefine: (refine) => set({ refine, sel: null, editing: null, ...(refine ? { editImage: false, layoutMode: false } : {}) }),
   setInspector: (inspector) => set({ inspector }),
   setSel: (sel) => set({ sel, ...(sel?.kind !== "bubble" || sel.i !== get().editing ? { editing: null } : {}) }),
   setEditing: (editing) => set({ editing }),
