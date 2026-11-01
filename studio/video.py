@@ -94,6 +94,7 @@ def make_video(
     args += ["-filter_complex", ";".join(graph), "-map", f"[{last}]"]
     if audio:
         args += ["-map", "[aout]", "-c:a", "aac", "-b:a", "160k"]
-    args += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-movflags", "+faststart", "-t", f"{total:.3f}", str(out)]
+    # xfade outputs yuv444p, which phones can't play; force the standard 4:2:0 / High profile
+    args += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-profile:v", "high", "-crf", "18", "-preset", "medium", "-movflags", "+faststart", "-t", f"{total:.3f}", str(out)]
     subprocess.run(args, check=True)
     return out
