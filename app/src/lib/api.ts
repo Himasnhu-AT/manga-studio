@@ -44,6 +44,13 @@ export const fileUrl = (slug: string, rel: string, v?: number | string | null) =
 
 export const versionUrl = (slug: string, pid: string, file: string) => fileUrl(slug, `out/${pid}/${file}`);
 
+/** The panel's cut-out character mask (served path + cache-buster from the server). */
+export const subjectUrl = (slug: string, subject: string | null | undefined) => {
+  if (!subject) return null;
+  const [rel, q] = subject.split("?");
+  return fileUrl(slug, rel, q?.replace(/^v=/, ""));
+};
+
 export const eventsUrl = () => `${API_BASE}/api/events`;
 
 // ---- types -------------------------------------------------------------
@@ -124,6 +131,8 @@ export interface Panel {
   pick: string | null;
   explicit_pick: string | null;
   final: number | null;
+  /** The cut-out character mask for the picked version (out/<pid>/masks/...), if one was made. */
+  subject: string | null;
 }
 
 export interface CastMember {
@@ -139,14 +148,36 @@ export interface CastMember {
   seed?: number;
 }
 
+/** Panel border weight. Default "normal"; "none" is a borderless panel that fades into the page. */
+export type SlotBorder = "normal" | "bold" | "thin" | "none";
+/**
+ * How the panel's character (its subject mask) relates to the frame:
+ * "pop" draws the character again over the border so it breaks out of the panel;
+ * "cutout" drops the frame and art background: only the character floats on the page.
+ */
+export type SlotSubject = "pop" | "cutout";
+
 export interface PageSlot {
-  panel: string;
+  panel: string; // "" = an empty slot
   box: Box;
   poly?: Vec2[];
+  border?: SlotBorder;
+  /** Edges touching the live area run off the page edge (tachikiri). */
+  bleed?: boolean;
+  subject?: SlotSubject;
+}
+/** Full-bleed art behind every panel on the page: a giant face, a mood, a skyline. */
+export interface PageBackground {
+  panel: string;
+  opacity?: number; // 0..1, default 0.35
+  crop?: { x: number; y: number; scale: number };
 }
 export interface Page {
   id: string;
   panels: PageSlot[];
+  background?: PageBackground;
+  /** Page and gutter colour. "black" for flashback / dramatic pages. */
+  paper?: "white" | "black";
 }
 
 export interface Format {
@@ -336,6 +367,8 @@ export const Api = {
     pid: string,
     b: { mode: "txt2img" | "img2img" | "inpaint"; prompt?: string; source?: string; mask?: string; strength?: number; count?: number },
   ) => api<{ jobs: number[]; seeds: number[] }>(`${s(slug)}/panels/${pid}/copilot`, { body: b }),
+  subject: (slug: string, pid: string, b: { point?: [number, number]; clear?: boolean }) =>
+    api<{ subject: string | null; method: string | null; area: number }>(`${s(slug)}/panels/${pid}/subject`, { body: b }),
   segment: (slug: string, pid: string, b: { point: [number, number]; file?: string; method?: "auto" | "vision" | "color"; tolerance?: number; ops?: EditOp[] }) =>
     api<SegmentResult>(`${s(slug)}/panels/${pid}/segment`, { body: b }),
   edit: (slug: string, pid: string, b: { ops: EditOp[]; file?: string }) => api<EditResult>(`${s(slug)}/panels/${pid}/edit`, { body: b }),

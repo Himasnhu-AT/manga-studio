@@ -19,6 +19,10 @@ interface StudioState {
   spaceHeld: boolean;
   /** A Bubble/SFX click that landed on an unselected panel: the editor places it once mounted. */
   pendingAdd: { pid: string; x: number; y: number } | null;
+  /** Layout mode: the page slot being edited (index into the page's panels). */
+  slotSel: number | null;
+  /** Layout mode: waiting for a click on the character of this slot to cut it out. */
+  pickSubject: number | null;
   setTool: (t: Tool) => void;
   toggleLayer: (k: keyof LayerToggles) => void;
   setLayoutMode: (v: boolean) => void;
@@ -28,6 +32,8 @@ interface StudioState {
   setEditing: (i: number | null) => void;
   setSpace: (v: boolean) => void;
   setPendingAdd: (p: StudioState["pendingAdd"]) => void;
+  setSlotSel: (i: number | null) => void;
+  setPickSubject: (i: number | null) => void;
 }
 
 export const useStudio = create<StudioState>((set, get) => ({
@@ -40,13 +46,17 @@ export const useStudio = create<StudioState>((set, get) => ({
   editing: null,
   spaceHeld: false,
   pendingAdd: null,
+  slotSel: null,
+  pickSubject: null,
   setTool: (tool) => set({ tool, ...(tool !== "select" ? { editing: null } : {}) }),
   toggleLayer: (k) => set({ layers: { ...get().layers, [k]: !get().layers[k] } }),
-  setLayoutMode: (layoutMode) => set({ layoutMode, sel: null, editing: null, ...(layoutMode ? { editImage: false } : {}) }),
+  setLayoutMode: (layoutMode) => set({ layoutMode, sel: null, editing: null, slotSel: null, pickSubject: null, ...(layoutMode ? { editImage: false } : {}) }),
   setEditImage: (editImage) => set({ editImage, sel: null, editing: null, ...(editImage ? { layoutMode: false } : {}) }),
   setInspector: (inspector) => set({ inspector }),
   setSel: (sel) => set({ sel, ...(sel?.kind !== "bubble" || sel.i !== get().editing ? { editing: null } : {}) }),
   setEditing: (editing) => set({ editing }),
   setSpace: (spaceHeld) => set({ spaceHeld }),
   setPendingAdd: (pendingAdd) => set({ pendingAdd }),
+  setSlotSel: (slotSel) => set({ slotSel, pickSubject: null }),
+  setPickSubject: (pickSubject) => set({ pickSubject }),
 }));

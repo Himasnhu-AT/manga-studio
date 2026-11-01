@@ -15,7 +15,8 @@ import { ImageEditor } from "./ImageEditor";
 import { Inspector } from "./Inspector";
 import { Rail } from "./Rail";
 import { useStudio } from "./studioState";
-import { ActionBar, CanvasToolbar, setZoomLabel, TemplateBar } from "./Toolbar";
+import { ActionBar, CanvasToolbar, setZoomLabel } from "./Toolbar";
+import { LayoutBars } from "./LayoutBars";
 import { useLettering } from "./useLettering";
 
 export function Studio() {
@@ -129,6 +130,18 @@ function StudioBody({ story }: { story: StoryDetail }) {
         return;
       }
       const sel = st.sel;
+      // layout mode: Delete removes the selected slot, Escape lets go of it first
+      if (st.layoutMode && st.slotSel !== null && mode === "page" && (e.key === "Delete" || e.key === "Backspace")) {
+        e.preventDefault();
+        const i = st.slotSel;
+        onPagesChange(pages.map((p, k) => (k === pageIdx ? { ...p, panels: p.panels.filter((_, j) => j !== i) } : p)));
+        st.setSlotSel(null);
+        return;
+      }
+      if (e.key === "Escape" && st.layoutMode && (st.slotSel !== null || st.pickSubject !== null)) {
+        st.setSlotSel(null);
+        return;
+      }
       if (e.key === "Escape") {
         if (st.layoutMode) st.setLayoutMode(false);
         else st.setSel(null);
@@ -169,7 +182,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
-  }, [lettering, mode, pages.length, pageIdx, setPage]);
+  }, [lettering, mode, pages, pageIdx, setPage, onPagesChange]);
 
   const autoLetter = async () => {
     setLetterBusy(true);
@@ -227,8 +240,12 @@ function StudioBody({ story }: { story: StoryDetail }) {
           <div className="relative">
             <CanvasToolbar pageMode={mode === "page"} canEdit={!!selected?.pick} onFit={() => canvas.current?.fit()} onZoomBy={(f) => canvas.current?.zoomBy(f)} onZoomTo={(z) => canvas.current?.zoomTo(z)} />
             {/* own row, out of flow, so it never squeezes the action bar */}
-            <div className="absolute top-full left-0 mt-2 w-max">
-              <AnimatePresence>{layoutMode && mode === "page" && <TemplateBar onApply={applyTpl} />}</AnimatePresence>
+            <div className="absolute top-full left-0 mt-2 w-max max-w-[calc(100cqw-24px)]">
+              <AnimatePresence>
+                {layoutMode && mode === "page" && pages[pageIdx] && (
+                  <LayoutBars story={story} page={pages[pageIdx]} onApply={applyTpl} onPage={(pg) => onPagesChange(pages.map((p, i) => (i === pageIdx ? pg : p)))} />
+                )}
+              </AnimatePresence>
             </div>
           </div>
           <ActionBar onLetter={autoLetter} letterBusy={letterBusy} onCast={() => setCastOpen(true)} onExport={() => setExportOpen(true)} castCount={Object.keys(story.cast ?? {}).length} />

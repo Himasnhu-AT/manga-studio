@@ -1,7 +1,7 @@
 // Page layout math: templates, reading order, gutters, art framing.
 // Slot boxes are fractions of the page's live area (inside the margins), per docs/ARCHITECTURE.md.
 
-import type { Box, Format, Page, PageSlot, Panel, StoryDetail, Vec2 } from "./api";
+import type { Box, Format, Page, PageSlot, Panel, SlotBorder, StoryDetail, Vec2 } from "./api";
 
 export const DEFAULT_PAGE = { width: 1654, height: 2339 };
 
@@ -223,6 +223,64 @@ export function moveGutter(slots: PageSlot[], gut: Gutter, pos: number, f: Forma
     }
     return { ...s, box: b };
   });
+}
+
+// ---- page devices: bleed, borders, free slots (mirrors studio/export.py) ---------------
+
+/** Border width as a fraction of the page width, per weight (export: W * 0.0022 * k). */
+export const BORDER_WEIGHT: Record<SlotBorder, number> = { normal: 1, bold: 2.2, thin: 0.5, none: 0 };
+export const borderFrac = (b?: SlotBorder) => 0.0022 * BORDER_WEIGHT[b ?? "normal"];
+const BLEED_EPS = 0.004;
+
+/**
+ * Where a slot sits, in fractions of the live area. With `bleed`, edges that touch the live area are
+ * pushed out to the page edge (beyond the margins), so the art runs off the page.
+ */
+export function slotRect(slot: PageSlot, f: Format | undefined): Box {
+  const [x, y, w, h] = slot.box;
+  if (!slot.bleed) return slot.box;
+  const { page, live } = pageDims(f);
+  const mx = live.x / live.w; // margin in live fractions
+  const my = live.y / live.h;
+  const right = page.width / live.w - mx; // page edge beyond x = 1
+  const bottom = page.height / live.h - my;
+  const x0 = x <= BLEED_EPS ? -mx : x;
+  const y0 = y <= BLEED_EPS ? -my : y;
+  const x1 = x + w >= 1 - BLEED_EPS ? right : x + w;
+  const y1 = y + h >= 1 - BLEED_EPS ? bottom : y + h;
+  return [x0, y0, x1 - x0, y1 - y0];
+}
+
+/** Split a rectangular slot in two along `axis` ("x": side by side, "y": stacked) with a gutter. */
+export function splitSlot(slot: PageSlot, axis: "x" | "y", f: Format | undefined): [PageSlot, PageSlot] {
+  const { gx, gy } = gutterFrac(f);
+  const [x, y, w, h] = slot.box;
+  const { poly: _poly, panel: _panel, ...rest } = slot;
+  if (axis === "x") {
+    const half = (w - gx) / 2;
+    return [
+      { ...rest, panel: slot.panel, box: box(x, y, half, h) },
+      { ...rest, panel: "", box: box(x + half + gx, y, w - half - gx, h) },
+    ];
+  }
+  const half = (h - gy) / 2;
+  return [
+    { ...rest, panel: slot.panel, box: box(x, y, w, half) },
+    { ...rest, panel: "", box: box(x, y + half + gy, w, h - half - gy) },
+  ];
+}
+
+/** A new free panel dropped in the middle of the page: an inset that overlaps what's there. */
+export const insetSlot = (): PageSlot => ({ panel: "", box: box(0.3, 0.36, 0.4, 0.28), border: "bold" });
+
+/** Move / resize helpers: keep a box at least 4% big and inside a sane range around the page. */
+export function clampBox([x, y, w, h]: Box): Box {
+  const min = 0.04;
+  w = Math.max(min, w);
+  h = Math.max(min, h);
+  x = Math.min(1.1 - min, Math.max(-0.1, x));
+  y = Math.min(1.1 - min, Math.max(-0.1, y));
+  return box(x, y, w, h);
 }
 
 // ---- slicing ---------------------------------------------------------------------
