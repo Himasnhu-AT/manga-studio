@@ -313,3 +313,54 @@ def test_export_frames_wide_slot_like_canvas():
     assert with_bubble.getpixel((500, 5))[:3] == (220, 30, 30)  # top of the art stays in view
     centred = export._fit(art, {}, 1000, 500)
     assert centred.getpixel((500, 5))[:3] == (240, 240, 240)  # plain cover crop cuts the top band
+
+
+def test_page_devices_validate_and_export(sample):
+    """Manga page devices: empty slots, borders, bleed, a page background, black paper, and the cut-out
+    character (pop out of the frame / float with no frame) all save and export."""
+    url = f"/api/stories/{sample}/pages"
+    # empty slots are allowed (templates and splits leave them); bad values are refused
+    assert client.put(url, json={"pages": [{"id": "pg1", "panels": [{"panel": "", "box": [0, 0, 1, 1]}]}]}).status_code == 200
+    assert client.put(url, json={"pages": [{"id": "pg1", "panels": [{"panel": "p01", "box": [0, 0, 1, 1], "border": "wavy"}]}]}).status_code == 400
+    assert client.put(url, json={"pages": [{"id": "pg1", "panels": [{"panel": "p01", "box": [0, 0, 1, 1], "subject": "float"}]}]}).status_code == 400
+    assert client.put(url, json={"pages": [{"id": "pg1", "background": {"panel": "nope"}, "panels": []}]}).status_code == 400
+
+    # cut out p01's character by clicking it (colour flood where Vision isn't available)
+    r = client.post(f"/api/stories/{sample}/panels/p01/subject", json={"point": [0.5, 0.5]})
+    assert r.status_code == 200, r.text
+    assert r.json()["subject"].startswith("out/p01/masks/subject-")
+    d = client.get(f"/api/stories/{sample}").json()
+    assert next(p for p in d["panels"] if p["id"] == "p01")["subject"]
+
+    pages = [
+        {
+            "id": "pg1",
+            "paper": "black",
+            "background": {"panel": "p02", "opacity": 0.5},
+            "panels": [
+                {"panel": "p03", "box": [0, 0, 1, 0.3], "bleed": True, "border": "bold"},
+                {"panel": "p01", "box": [0.5, 0.33, 0.5, 0.3], "subject": "pop"},
+                {"panel": "p04", "box": [0, 0.33, 0.48, 0.3], "border": "none"},
+                {"panel": "p01", "box": [0.1, 0.66, 0.5, 0.34], "subject": "cutout"},
+                {"panel": "", "box": [0.62, 0.66, 0.38, 0.34]},
+            ],
+        }
+    ]
+    assert client.put(url, json={"pages": pages}).status_code == 200
+    r = client.post(f"/api/stories/{sample}/export", json={"formats": ["png", "svg"], "preset": "print-a5"})
+    assert r.status_code == 200, r.text
+    files = r.json()["files"]
+    root = st.STORIES / sample
+    im = Image.open(root / next(f for f in files if f.endswith(".png"))).convert("RGB")
+    # the bled top panel reaches the very corner of the bleed; plain paper elsewhere stays black
+    assert im.getpixel((1, 1)) != export.PAPERS["black"]
+    geo = export.page_geometry(st.load(sample), "print-a5", None, None)
+    lx, ly, lw, lh = geo["live"]
+    gutter_px = (int(lx + 0.49 * lw), int(ly + 0.315 * lh))  # between the rows, no panel there
+    assert sum(im.getpixel(gutter_px)) < 3 * 140  # black paper behind a 50% background
+    svg = (root / next(f for f in files if f.endswith(".svg"))).read_text()
+    assert 'class="page-background"' in svg and 'class="subject pop"' in svg and 'class="subject cutout"' in svg
+
+    # clearing the cut-out falls back to a normal framed panel
+    assert client.post(f"/api/stories/{sample}/panels/p01/subject", json={"clear": True}).json()["subject"] is None
+    assert client.post(f"/api/stories/{sample}/export", json={"formats": ["png"]}).status_code == 200

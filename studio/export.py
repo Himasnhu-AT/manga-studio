@@ -85,10 +85,112 @@ def auto_pages(story: Story, per_page: int = 4) -> list[dict]:
     return pages
 
 
-def _slot_px(slot: dict, live) -> tuple[int, int, int, int]:
+# ---- page devices: borders, bleed, page background, character cut-outs ---------------
+
+BORDERS = {"normal": 1.0, "bold": 2.2, "thin": 0.5, "none": 0.0}
+SUBJECTS = ("pop", "cutout")
+PAPERS = {"white": (255, 255, 255), "black": (12, 12, 14)}
+BLEED_EPS = 0.004  # a box edge this close to the live edge counts as touching it
+
+
+def subject_rel(story: Story, pid: str) -> str | None:
+    """Story-relative path of the cut-out mask for the panel's picked version, if one was made."""
+    from studio.story import picked_version
+
+    v = picked_version(story, pid)
+    if not v:
+        return None
+    rel = f"out/{pid}/masks/subject-{Path(v).stem}.png"
+    return rel if (story.dir / rel).exists() else None
+
+
+def _subject_alpha(story: Story, pid: str) -> Image.Image | None:
+    rel = subject_rel(story, pid)
+    if not rel:
+        return None
+    m = Image.open(story.dir / rel)
+    return m.getchannel("A") if "A" in m.getbands() else m.convert("L")
+
+
+def _slot_px(slot: dict, live, canvas: tuple[int, int] | None = None) -> tuple[int, int, int, int]:
+    """Slot rectangle in page px. With `bleed`, edges touching the live area run to the canvas edge."""
     lx, ly, lw, lh = live
     x, y, w, h = slot["box"]
-    return int(lx + x * lw), int(ly + y * lh), max(1, int(w * lw)), max(1, int(h * lh))
+    x0, y0, x1, y1 = lx + x * lw, ly + y * lh, lx + (x + w) * lw, ly + (y + h) * lh
+    if slot.get("bleed") and canvas:
+        if x <= BLEED_EPS:
+            x0 = 0
+        if y <= BLEED_EPS:
+            y0 = 0
+        if x + w >= 1 - BLEED_EPS:
+            x1 = canvas[0]
+        if y + h >= 1 - BLEED_EPS:
+            y1 = canvas[1]
+    return int(x0), int(y0), max(1, int(x1 - x0)), max(1, int(y1 - y0))
+
+
+def _line_px(geo: dict, slot: dict) -> int:
+    k = BORDERS.get(slot.get("border") or "normal", 1.0)
+    return 0 if k == 0 else max(1, int(geo["W"] * 0.0022 * k))
+
+
+def _lettering_layer(panel: dict, size: tuple[int, int]) -> Image.Image | None:
+    """Bubbles and sfx alone on a transparent canvas the size of the art."""
+    from studio.compose import draw_bubble, draw_sfx
+
+    if (panel.get("layers") or {}).get("lettering", {}).get("visible", True) is False:
+        return None
+    if not (panel.get("bubbles") or panel.get("sfx")):
+        return None
+    img = Image.new("RGBA", size, (0, 0, 0, 0))
+    for s in panel.get("sfx") or []:
+        draw_sfx(img, s)
+    for b in panel.get("bubbles") or []:
+        if b.get("at") and b.get("text"):
+            draw_bubble(img, b)
+    return img
+
+
+def _paste_framed(canvas: Image.Image, layer: Image.Image, panel: dict, slot_rect, clip: Image.Image | None, alpha: Image.Image | None = None) -> None:
+    """Scale `layer` (art-sized) into the slot's art frame and paste it. `clip` is an L mask the size of the
+    canvas (None = no clipping), `alpha` an extra L mask at art size (the cut-out character)."""
+    x, y, w, h = slot_rect
+    left, top, fw, fh = slot_frame_px(panel, layer.size, w, h)
+    size = (max(1, round(fw)), max(1, round(fh)))
+    big = layer.convert("RGBA").resize(size, Image.LANCZOS)
+    a = big.getchannel("A")
+    if alpha is not None:
+        from PIL import ImageChops
+
+        a = ImageChops.multiply(a, alpha.resize(size, Image.LANCZOS))
+    full = Image.new("L", canvas.size, 0)
+    full.paste(a, (x + round(left), y + round(top)))
+    if clip is not None:
+        from PIL import ImageChops
+
+        full = ImageChops.multiply(full, clip)
+    rgb = Image.new("RGB", canvas.size, (255, 255, 255))
+    rgb.paste(big.convert("RGB"), (x + round(left), y + round(top)))
+    canvas.paste(rgb, (0, 0), full)
+
+
+def _page_background(story: Story, page: dict, canvas: Image.Image) -> None:
+    bg = page.get("background") or {}
+    pid = bg.get("panel")
+    if not pid:
+        return
+    try:
+        art = render_panel(story, pid, lettering=False, crop=False)
+    except Exception:
+        return
+    if art is None:
+        return
+    W, H = canvas.size
+    left, top, fw, fh = art_frame(art.width / art.height, W / H, bg.get("crop"))
+    big = art.convert("RGB").resize((max(1, round(fw * W / 100)), max(1, round(fh * H / 100))), Image.LANCZOS)
+    layer = canvas.copy()
+    layer.paste(big, (round(left * W / 100), round(top * H / 100)))
+    canvas.paste(Image.blend(canvas, layer, max(0.0, min(1.0, float(bg.get("opacity", 0.35))))))
 
 
 def art_frame(img_aspect: float, slot_aspect: float, crop: dict | None = None) -> tuple[float, float, float, float]:
@@ -144,25 +246,42 @@ def _poly_px(slot: dict, x: int, y: int, w: int, h: int) -> list[tuple[float, fl
 
 
 def render_page(story: Story, page: dict, geo: dict) -> Image.Image:
-    canvas = Image.new("RGB", (geo["W"], geo["H"]), (255, 255, 255))
-    line = max(2, int(geo["W"] * 0.0022))
+    """One page. Per slot, bottom to top: art (clipped to the frame), border, the cut-out character
+    (`subject: pop` breaks out over the border, `cutout` floats with no frame), then lettering.
+    Later slots draw over earlier ones, so an inset panel sits on top of the panel it overlaps."""
+    paper = PAPERS.get(page.get("paper") or "white", PAPERS["white"])
+    canvas = Image.new("RGB", (geo["W"], geo["H"]), paper)
+    _page_background(story, page, canvas)
     for slot in page.get("panels") or []:
-        img = render_panel(story, slot["panel"], crop=False)
-        x, y, w, h = _slot_px(slot, geo["live"])
+        pid = slot.get("panel")
+        x, y, w, h = _slot_px(slot, geo["live"], (geo["W"], geo["H"]))
         poly = _poly_px(slot, x, y, w, h)
-        if img is not None:
-            fit = _fit(img.convert("RGB"), story.panel(slot["panel"]), w, h)
-            if poly:
-                mask = Image.new("L", (w, h), 0)
-                ImageDraw.Draw(mask).polygon([(px - x, py - y) for px, py in poly], fill=255)
-                canvas.paste(fit, (x, y), mask)
-            else:
-                canvas.paste(fit, (x, y))
-        d = ImageDraw.Draw(canvas)
+        clip = Image.new("L", canvas.size, 0)
         if poly:
-            d.line(poly + [poly[0]], fill=INK, width=line, joint="curve")
+            ImageDraw.Draw(clip).polygon(poly, fill=255)
         else:
-            d.rectangle([x, y, x + w - 1, y + h - 1], outline=INK, width=line)
+            clip.paste(255, (x, y, x + w, y + h))
+        panel = story.panel(pid) if pid and any(p["id"] == pid for p in story.panels) else None
+        art = render_panel(story, pid, lettering=False, crop=False) if panel else None
+        mode = slot.get("subject") if slot.get("subject") in SUBJECTS else None
+        alpha = _subject_alpha(story, pid) if (art is not None and mode) else None
+        if mode and alpha is None:
+            mode = None  # no mask yet: draw a normal panel
+        if art is not None and mode != "cutout":
+            _paste_framed(canvas, art, panel, (x, y, w, h), clip)
+        line = _line_px(geo, slot) if mode != "cutout" else 0
+        if line:
+            d = ImageDraw.Draw(canvas)
+            if poly:
+                d.line(poly + [poly[0]], fill=INK, width=line, joint="curve")
+            else:
+                d.rectangle([x, y, x + w - 1, y + h - 1], outline=INK, width=line)
+        if mode:
+            _paste_framed(canvas, art, panel, (x, y, w, h), None, alpha)
+        if panel is not None:
+            lt = _lettering_layer(panel, art.size) if art is not None else None
+            if lt is not None:
+                _paste_framed(canvas, lt, panel, (x, y, w, h), clip if mode != "cutout" else None)
     return canvas
 
 
@@ -246,28 +365,47 @@ def lettering_svg(panel: dict, W: int, H: int) -> str:
 
 def page_svg(story: Story, page: dict, geo: dict) -> str:
     W, H = geo["W"], geo["H"]
-    line = max(2, int(W * 0.0022))
-    body = [f'<rect width="{W}" height="{H}" fill="#fff"/>']
+    paper = PAPERS.get(page.get("paper") or "white", PAPERS["white"])
+    body = [f'<rect width="{W}" height="{H}" fill="rgb{paper}"/>']
     defs = []
+    bg = page.get("background") or {}
+    if bg.get("panel") and any(p["id"] == bg["panel"] for p in story.panels):
+        art = render_panel(story, bg["panel"], lettering=False, crop=False)
+        if art is not None:
+            l, t, fw, fh = art_frame(art.width / art.height, W / H, bg.get("crop"))
+            op = max(0.0, min(1.0, float(bg.get("opacity", 0.35))))
+            body.append(f'<image class="page-background" x="{l * W / 100:.1f}" y="{t * H / 100:.1f}" width="{fw * W / 100:.1f}" height="{fh * H / 100:.1f}" opacity="{op:.2f}" preserveAspectRatio="none" href="{_data_uri(art)}"/>')
     for k, slot in enumerate(page.get("panels") or []):
-        panel = story.panel(slot["panel"])
-        x, y, w, h = _slot_px(slot, geo["live"])
+        pid = slot.get("panel")
+        x, y, w, h = _slot_px(slot, geo["live"], (W, H))
         poly = _poly_px(slot, x, y, w, h)
         cid = f"clip-{page['id']}-{k}"
         shape = f'<polygon points="{_pts(poly)}"/>' if poly else f'<rect x="{x}" y="{y}" width="{w}" height="{h}"/>'
         defs.append(f'<clipPath id="{cid}">{shape}</clipPath>')
-        art = render_panel(story, slot["panel"], lettering=False, crop=False)
-        g = [f'<g clip-path="url(#{cid})" data-panel="{escape(slot["panel"])}">']
+        panel = story.panel(pid) if pid and any(p["id"] == pid for p in story.panels) else None
+        art = render_panel(story, pid, lettering=False, crop=False) if panel else None
+        mode = slot.get("subject") if slot.get("subject") in SUBJECTS else None
+        alpha = _subject_alpha(story, pid) if (art is not None and mode) else None
+        if mode and alpha is None:
+            mode = None
+        frame = None
         if art is not None:
             pw, ph = art.size
             fl, ft, fw, fh = slot_frame_px(panel, art.size, w, h)
-            g.append(f'<svg x="{x + fl:.2f}" y="{y + ft:.2f}" width="{fw:.2f}" height="{fh:.2f}" viewBox="0 0 {pw} {ph}" preserveAspectRatio="none">')
-            g.append(f'<g class="art"><image width="{pw}" height="{ph}" href="{_data_uri(art)}"/></g>')
-            g.append(f'<g class="lettering">{lettering_svg(panel, pw, ph)}</g></svg>')
-        g.append("</g>")
-        body.append("".join(g))
-        outline = shape.replace("/>", f' fill="none" stroke="#19191e" stroke-width="{line}" stroke-linejoin="round"/>')
-        body.append(outline)
+            frame = f'x="{x + fl:.2f}" y="{y + ft:.2f}" width="{fw:.2f}" height="{fh:.2f}" viewBox="0 0 {pw} {ph}" preserveAspectRatio="none"'
+        if frame and mode != "cutout":
+            body.append(f'<g clip-path="url(#{cid})" data-panel="{escape(pid)}"><svg {frame}><g class="art"><image width="{pw}" height="{ph}" href="{_data_uri(art)}"/></g></svg></g>')
+        line = _line_px(geo, slot) if mode != "cutout" else 0
+        if line:
+            body.append(shape.replace("/>", f' fill="none" stroke="#19191e" stroke-width="{line}" stroke-linejoin="round"/>'))
+        if frame and mode:
+            mid = f"subject-{page['id']}-{k}"
+            m = Image.merge("RGB", (alpha, alpha, alpha))  # luminance mask: white = the character
+            defs.append(f'<mask id="{mid}" maskUnits="userSpaceOnUse" x="0" y="0" width="{pw}" height="{ph}"><image width="{pw}" height="{ph}" href="{_data_uri(m)}"/></mask>')
+            body.append(f'<svg {frame} class="subject {mode}" data-panel="{escape(pid)}"><image width="{pw}" height="{ph}" mask="url(#{mid})" href="{_data_uri(art)}"/></svg>')
+        if frame:
+            clip_attr = f' clip-path="url(#{cid})"' if mode != "cutout" else ""
+            body.append(f'<g{clip_attr}><svg {frame}><g class="lettering">{lettering_svg(panel, pw, ph)}</g></svg></g>')
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{W}" height="{H}" viewBox="0 0 {W} {H}">'
         f"<defs>{''.join(defs)}</defs>{''.join(body)}</svg>"

@@ -217,6 +217,7 @@ def story_detail(slug: str):
                 "pick": st.picked_version(s, p["id"]),
                 "explicit_pick": state["picks"].get(p["id"]),
                 "final": _mtime(s.dir / "final" / f"{p['id']}.png"),
+                "subject": _subject_url(s, p["id"]),
             }
         )
     return {
@@ -236,6 +237,12 @@ def story_detail(slug: str):
         "has_source": (s.dir / "source.md").exists(),
         "pipeline": _pipeline_summary(s),
     }
+
+
+def _subject_url(s: st.Story, pid: str) -> str | None:
+    """Cut-out mask of the picked version, with its mtime so a redo busts the browser cache."""
+    rel = exporter.subject_rel(s, pid)
+    return f"{rel}?v={_mtime(s.dir / rel)}" if rel else None
 
 
 def _pipeline_summary(s: st.Story) -> dict | None:
@@ -655,12 +662,30 @@ def put_pages(slug: str, req: PagesReq):
     for pg in req.pages:
         if not pg.get("id"):
             raise HTTPException(400, "every page needs an id")
+        where = f"page {pg['id']}"
+        bg = pg.get("background")
+        if bg is not None:
+            if not isinstance(bg, dict) or bg.get("panel") not in ids:
+                raise HTTPException(400, f"{where}: background needs a known panel")
+            op = bg.get("opacity", 0.35)
+            if not isinstance(op, (int, float)) or not 0 <= op <= 1:
+                raise HTTPException(400, f"{where}: background opacity is 0..1")
+        if pg.get("paper", "white") not in exporter.PAPERS:
+            raise HTTPException(400, f"{where}: paper is white or black")
         for sl in pg.get("panels") or []:
-            if sl.get("panel") not in ids:
-                raise HTTPException(400, f"page {pg['id']}: unknown panel {sl.get('panel')!r}")
+            pid = sl.get("panel", "")
+            if pid != "" and pid not in ids:  # "" is an empty slot waiting for a panel
+                raise HTTPException(400, f"{where}: unknown panel {pid!r}")
             box = sl.get("box")
-            if not (isinstance(box, list) and len(box) == 4):
-                raise HTTPException(400, f"page {pg['id']}: panel {sl['panel']} needs box [x, y, w, h]")
+            if not (isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box)):
+                raise HTTPException(400, f"{where}: panel {pid or '(empty)'} needs box [x, y, w, h]")
+            if sl.get("border", "normal") not in exporter.BORDERS:
+                raise HTTPException(400, f"{where}: border is one of {', '.join(exporter.BORDERS)}")
+            if sl.get("subject") not in (None, *exporter.SUBJECTS):
+                raise HTTPException(400, f"{where}: subject is pop or cutout")
+            poly = sl.get("poly")
+            if poly is not None and not (isinstance(poly, list) and len(poly) >= 3 and all(isinstance(v, list) and len(v) == 2 for v in poly)):
+                raise HTTPException(400, f"{where}: poly is a list of at least 3 [x, y] points")
     with _edit(slug) as data:
         data["pages"] = pj.from_plain(req.pages)
     bump()
@@ -866,6 +891,60 @@ def copilot(slug: str, pid: str, req: CopilotReq):
     except st.StoryError as e:
         raise HTTPException(400, str(e))
     return {"jobs": created, "seeds": seeds}
+
+
+# ---- cut-out character (page devices: pop out of the frame, float with no frame) -----
+
+
+class SubjectReq(BaseModel):
+    point: list[float] | None = None  # click on the character (fractions); none = every foreground figure
+    clear: bool = False
+
+
+@app.post("/api/stories/{slug}/panels/{pid}/subject")
+def panel_subject(slug: str, pid: str, req: SubjectReq):
+    """Make (or clear) the cut-out mask of the panel's picked version: an alpha PNG in out/<pid>/masks/.
+    Pages use it for `subject: pop | cutout`. Apple Vision finds the figure; without Vision a click is needed."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    from studio import segment as seg
+
+    s = _edit_panel_story(slug, pid)
+    name, path = _version_path(s, pid, None)
+    out = s.dir / "out" / pid / "masks" / f"subject-{Path(name).stem}.png"
+    if req.clear:
+        out.unlink(missing_ok=True)
+        bump()
+        return {"subject": None, "method": None, "area": 0.0}
+    img = Image.open(path).convert("RGB")
+    key = f"{path}:{path.stat().st_mtime_ns}"
+    method = "vision"
+    if req.point is not None:
+        if len(req.point) != 2:
+            raise HTTPException(400, "point is [x, y] fractions")
+        try:
+            r = seg.segment(img, (req.point[0], req.point[1]), "auto", key=key)
+        except RuntimeError as e:
+            raise HTTPException(400, str(e))
+        m = np.asarray(r["mask"]) > 127
+        method = r["method"]
+    else:
+        if not seg.vision_available():
+            raise HTTPException(400, "Click the character to cut it out (automatic finding needs Apple Vision, macOS 14+)")
+        try:
+            m = seg.vision_labels(img, key) > 0
+        except Exception as e:
+            raise HTTPException(400, f"Couldn't find a figure: {e}")
+    if not m.any():
+        raise HTTPException(400, "No character found there. Click on the character.")
+    a = Image.fromarray(np.where(m, 255, 0).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2))  # soft edge
+    rgba = Image.new("RGBA", img.size, (255, 255, 255, 0))
+    rgba.putalpha(a)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    rgba.save(out)
+    bump()
+    return {"subject": _subject_url(s, pid), "method": method, "area": round(float(m.mean()), 4)}
 
 
 # ---- image editing (segment, rearrange, erase, fix, extend) -------------------------
