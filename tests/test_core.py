@@ -402,3 +402,38 @@ def test_refine_sketch_keeps_the_drawing_shape(sample):
     meta = json.loads((st.STORIES / sample / "out" / "p05" / job["file"]).with_suffix(".json").read_text())
     assert meta["refine"] == "tone" and meta["source"] == f
     assert client.post(f"/api/stories/{sample}/panels/p05/refine", json={"preset": "sparkles"}).status_code == 400
+
+
+def test_drawing_layers_render_and_merge(sample):
+    """Layers drawn in the Studio show in every render (even with no version yet) and merge into a version."""
+    pid = client.post(f"/api/stories/{sample}/panels", json={"title": "Drawn"}).json()["id"]
+    rough = Image.new("RGBA", (400, 600), (0, 0, 0, 0))
+    ImageDraw.Draw(rough).line([(0, 0), (399, 599)], fill=(90, 140, 210, 255), width=12)
+    inks = Image.new("RGBA", (400, 600), (0, 0, 0, 0))
+    ImageDraw.Draw(inks).rectangle([150, 250, 250, 350], fill=(20, 20, 20, 255))
+
+    def url(im):
+        b = io.BytesIO()
+        im.save(b, "PNG")
+        return "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()
+
+    assert client.patch(f"/api/stories/{sample}/panels/{pid}", json={"drawing": [{"id": "rough", "name": "Rough", "opacity": 0.5}, {"id": "inks", "name": "Inks"}]}).status_code == 200
+    assert client.put(f"/api/stories/{sample}/panels/{pid}/drawing/rough", json={"png": url(rough)}).status_code == 200
+    assert client.put(f"/api/stories/{sample}/panels/{pid}/drawing/inks", json={"png": url(inks)}).status_code == 200
+    assert client.put(f"/api/stories/{sample}/panels/{pid}/drawing/Bad%20Id", json={"png": url(inks)}).status_code == 400
+    d = client.get(f"/api/stories/{sample}").json()
+    assert set(next(p for p in d["panels"] if p["id"] == pid)["drawing_files"]) == {"rough", "inks"}
+
+    from studio.compose import render_panel
+
+    img = render_panel(st.load(sample), pid)  # no version yet: white paper + layers
+    assert img.size == (400, 600) and img.getpixel((200, 300))[:3] == (20, 20, 20)
+    r, g, b, _ = img.getpixel((5, 5))  # the blue rough at 50% over white
+    assert b > r and r > 90
+
+    f = client.post(f"/api/stories/{sample}/panels/{pid}/drawing/merge").json()["file"]
+    s = st.load(sample)
+    assert st.picked_version(s, pid) == f
+    assert Image.open(s.dir / "out" / pid / f).getpixel((200, 300)) == (20, 20, 20)
+    assert not (s.dir / "out" / pid / "drawing" / "inks.png").exists()
+    assert client.post(f"/api/stories/{sample}/panels/{pid}/drawing/merge").status_code == 400

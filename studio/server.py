@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from studio import appsvc, compose, export as exporter, imageedit, lettering, project as pj, story as st
+from studio import appsvc, compose, drawing, export as exporter, imageedit, lettering, project as pj, story as st
 from studio.engine import make_engine
 
 DASHBOARD = st.ROOT / "dashboard" / "index.html"
@@ -218,6 +218,7 @@ def story_detail(slug: str):
                 "explicit_pick": state["picks"].get(p["id"]),
                 "final": _mtime(s.dir / "final" / f"{p['id']}.png"),
                 "subject": _subject_url(s, p["id"]),
+                "drawing_files": {lp.stem: _mtime(lp) for _, lp in drawing.layers(s.dir, p)},
             }
         )
     return {
@@ -454,6 +455,7 @@ PANEL_KEYS = {
     "title", "action", "refs", "use", "cast", "bubbles", "sfx", "layers", "crop", "protect",
     "seed", "strength", "strip", "width", "height", "ref_label", "avoid", "steps", "output_resolution",
     "camera", "source_span", "beat", "location",  # written by the pipeline; editable from the UI
+    "drawing", "stage",  # hand-drawn layers (studio/drawing.py) and the production stage
 }
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -812,6 +814,57 @@ async def import_art(slug: str, pid: str, file: UploadFile = File(...)):
         raise HTTPException(400, f"images only ({', '.join(sorted(ART_EXT))})")
     img = _read_art(await file.read())
     return {"file": save_art_version(s, pid, img, {"imported": name})}
+
+
+# ---- drawing layers: the artist's own strokes ---------------------------------------
+
+
+class LayerReq(BaseModel):
+    png: str  # data URL of the layer canvas (RGBA)
+
+
+@app.put("/api/stories/{slug}/panels/{pid}/drawing/{lid}")
+def put_layer(slug: str, pid: str, lid: str, req: LayerReq):
+    """Save one drawing layer's pixels. The layer list (names, order, opacity) is the panel's `drawing` key."""
+    s = _edit_panel_story(slug, pid)
+    try:
+        drawing.save_layer(s.dir, pid, lid, req.png)
+    except drawing.DrawingError as e:
+        raise HTTPException(400, str(e))
+    bump()
+    return {"ok": True}
+
+
+@app.delete("/api/stories/{slug}/panels/{pid}/drawing/{lid}")
+def delete_layer(slug: str, pid: str, lid: str):
+    s = _edit_panel_story(slug, pid)
+    try:
+        drawing.layer_path(s.dir, pid, lid).unlink(missing_ok=True)
+    except drawing.DrawingError as e:
+        raise HTTPException(400, str(e))
+    bump()
+    return {"ok": True}
+
+
+@app.post("/api/stories/{slug}/panels/{pid}/drawing/merge")
+def merge_drawing(slug: str, pid: str):
+    """Bake the visible layers into a new version (over the version in use, or white paper) and clear them,
+    so Refine, edits and the model see the drawing. The new version is put in use."""
+    from PIL import Image
+
+    s = _edit_panel_story(slug, pid)
+    panel = s.panel(pid)
+    drawn = drawing.layers(s.dir, panel)
+    if not drawn:
+        raise HTTPException(400, "nothing drawn on this panel yet")
+    v = st.picked_version(s, pid)
+    base = Image.open(s.dir / "out" / pid / v).convert("RGBA") if v else Image.new("RGBA", drawing.size(s.dir, panel), (255, 255, 255, 255))
+    img = drawing.composite(s.dir, panel, base).convert("RGB")
+    f = save_art_version(s, pid, img, {"engine": "drawing", "drawn_on": v, "layers": [spec.get("name") or spec.get("id") for spec, _ in drawn]})
+    for _, p in drawn:
+        p.unlink(missing_ok=True)
+    bump()
+    return {"file": f}
 
 
 # ---- refine sketch: your drawing in, a cleaner stage out ------------------------------
