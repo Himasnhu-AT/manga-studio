@@ -22,6 +22,19 @@ def _hold(panel: dict) -> float:
     return max(3.0, min(6.5, 2.2 + 0.32 * words))
 
 
+def panel_start(durs: list[float], fade: float, i: int) -> float:
+    """Second at which panel i is half faded in (the moment it reads as on screen)."""
+    if i == 0:
+        return 0.0
+    length = durs[0]
+    for k in range(1, i + 1):
+        off = length - fade
+        if k == i:
+            return off + fade / 2
+        length = off + durs[k]
+    return 0.0
+
+
 def make_video(
     story: Story,
     width: int = 720,
@@ -29,7 +42,11 @@ def make_video(
     fade: float = 0.5,
     audio: Path | None = None,
     out: Path | None = None,
+    audio_start: float = 0.0,
+    hit: tuple[str, float] | None = None,
 ) -> Path:
+    """`audio_start` skips into the song. `hit=(pid, t)` instead starts the song so that its moment at `t`
+    seconds (the chorus, the hook) lands the instant panel `pid` appears."""
     if not shutil.which("ffmpeg"):
         raise RuntimeError("ffmpeg not found (brew install ffmpeg)")
     panels = [p for p in story.panels if p.get("strip", True) is not False]
@@ -64,10 +81,15 @@ def make_video(
         last, length = f"x{i}", off + durs[i]
 
     total = length
+    if audio and hit:
+        audio_start = max(0.0, hit[1] - panel_start(durs, fade, [p["id"] for p, _ in items].index(hit[0])))
     if audio:
         args += ["-i", str(audio)]
         a = len(durs)
-        graph.append(f"[{a}:a]atrim=0:{total:.3f},afade=t=out:st={max(0, total - 1.5):.3f}:d=1.5[aout]")
+        graph.append(
+            f"[{a}:a]atrim=start={audio_start:.3f}:duration={total:.3f},asetpts=PTS-STARTPTS,"
+            f"afade=t=in:st=0:d=0.4,afade=t=out:st={max(0, total - 1.5):.3f}:d=1.5[aout]"
+        )
 
     args += ["-filter_complex", ";".join(graph), "-map", f"[{last}]"]
     if audio:

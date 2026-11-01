@@ -513,3 +513,27 @@ def test_detect_splits_panels_joined_by_a_bubble():
     assert len(found) == 3
     right, left = found[1]["box"], found[2]["box"]
     assert abs(right[0] - 600 / 1240) < 0.02 and abs(left[0] - 80 / 1240) < 0.01 and left[0] + left[2] < 0.5
+
+
+def test_video_hit_lands_song_moment_on_panel(sample, tmp_path):
+    """--hit p03@20 starts the song so second 20 plays the moment panel p03 appears."""
+    import shutil
+    import subprocess
+
+    from studio import compose, video
+
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed")
+    s = st.load(sample)
+    for p in s.panels:
+        if p.get("strip", True) is not False:
+            compose.compose_panel(s, p["id"])
+    song = tmp_path / "song.wav"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=90", str(song)], check=True)
+    ids = [p["id"] for p in s.panels if p.get("strip", True) is not False]
+    durs = [video._hold(p) + (0.5 if 0 < i < len(ids) - 1 else 0.25) for i, p in enumerate(p for p in s.panels if p.get("strip", True) is not False)]
+    t3 = video.panel_start(durs, 0.5, ids.index("p03"))
+    assert t3 > 0
+    out = video.make_video(s, audio=song, hit=("p03", 20.0), out=tmp_path / "v.mp4")
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(out)], capture_output=True, text=True)
+    assert probe.stdout.strip() == "aac"
