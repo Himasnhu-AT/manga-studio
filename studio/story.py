@@ -38,6 +38,24 @@ def sample_dir() -> Path:
             return d
     return STORIES / SAMPLE
 
+
+def backend_mismatch(status: dict) -> str | None:
+    """Why a running backend (its /api/status) is not the one this process should talk to, or None.
+
+    Port 7860 can be held by a different studio (a checkout's dev server vs. the installed app), each
+    with its own stories folder. Talking to the wrong one silently writes stories to the wrong place.
+    """
+    theirs = status.get("stories") if isinstance(status, dict) else None
+    if not theirs:
+        return (f"the studio backend on this port is an older or different version that doesn't say where it "
+                f"saves stories; this one uses {STORIES}. Quit that backend and start the app again.")
+    if Path(theirs).resolve() != STORIES:
+        return (f"the studio backend on this port saves stories in {theirs}, but this one uses {STORIES}. "
+                f"Quit the other backend (a `studio serve` from a terminal or agent, or the other app), "
+                f"then start the right one.")
+    return None
+
+
 _state_lock = threading.Lock()
 
 

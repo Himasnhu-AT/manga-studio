@@ -17,6 +17,8 @@ from typing import Any
 import httpx
 from mcp.server.mcpserver import Image, MCPServer
 
+from studio.story import backend_mismatch
+
 URL = os.environ.get("STUDIO_URL", "http://127.0.0.1:7860").rstrip("/")
 
 INSTRUCTIONS = """manga-studio makes consistent manga/webtoon pages with Qwen-Image-2.1 running locally. You write
@@ -56,11 +58,33 @@ class StudioOffline(RuntimeError):
     pass
 
 
+_checked = False
+
+
+def _check_backend() -> None:
+    """Refuse to work through a backend that saves stories somewhere else (checked once per backend)."""
+    global _checked
+    if _checked:
+        return
+    try:
+        status = httpx.get(URL + "/api/status", timeout=httpx.Timeout(10, connect=3)).json()
+    except httpx.ConnectError as e:
+        raise StudioOffline(f"The manga-studio backend isn't running at {URL}. Open the Manga Studio app, or start it with `uv run studio serve`.") from e
+    except (httpx.HTTPError, ValueError):
+        return
+    if why := backend_mismatch(status):
+        raise RuntimeError(f"Wrong backend at {URL}: {why}")
+    _checked = True
+
+
 def _api(method: str, path: str, **kw) -> Any:
+    _check_backend()
     try:
         kw.setdefault("timeout", httpx.Timeout(60, connect=3))
         r = httpx.request(method, URL + path, **kw)
     except httpx.ConnectError as e:
+        global _checked
+        _checked = False  # the backend went away; check whichever one comes back
         raise StudioOffline(f"The manga-studio backend isn't running at {URL}. Open the Manga Studio app, or start it with `uv run studio serve`.") from e
     if r.status_code >= 400:
         try:

@@ -47,12 +47,16 @@ moves everything out of its read-only, code-signed bundle (see "Desktop shell" b
 ## Desktop shell (`app/src-tauri/src/lib.rs`)
 
 On launch the shell reuses a backend already listening on 127.0.0.1:7860 or spawns one (its own
-process group; stopped on quit only if it spawned it). It picks one of two layouts:
+process group; stopped on quit only if it spawned it). It reuses one only if `/api/status` reports the
+same `stories` folder; a backend serving another folder (say a checkout's dev server while the
+installed app runs) blocks the window with a message instead. The MCP bridge and the CLI make the
+same check before sending anything. It picks one of two layouts:
 
-- **Dev** (debug build, `MANGA_STUDIO_ROOT` set, or a release binary outside a `.app` whose source
-  checkout exists): `uv run studio serve --port 7860` in the repo. Settings, log and stories as in a
-  checkout.
-- **Installed** (binary inside `<App>.app/Contents/MacOS`): the backend ships as Tauri resources in
+- **Dev** (debug build, or `MANGA_STUDIO_ROOT` set): `uv run studio serve --port 7860` in the repo.
+  Settings, log and stories as in a checkout. Release builds never look for the checkout they were
+  built from, and `scripts/release-mac.sh` remaps `$HOME` in source paths, so no path from the build
+  machine is baked in.
+- **Installed** (any other build): the backend ships as Tauri resources in
   `Contents/Resources/backend/` (`pyproject.toml`, `uv.lock`, `studio/**/*.py`, `templates/`,
   `dashboard/`, `fonts/`, `stories/cheek-squish/{story.yaml,refs/}`; listed in
   `tauri.conf.json` `bundle.resources`). It runs

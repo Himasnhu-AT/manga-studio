@@ -36,8 +36,8 @@ uv run studio pipeline <slug> [run|status|task|cancel]  # Mode B pipeline (see b
 ```
 
 If `gen` says the server isn't running, start `uv run studio serve` in the background (don't
-use memgate). If the desktop app is open, it already runs one (and the CLI/MCP talk to whichever
-backend holds port 7860).
+use memgate). If the desktop app is open, it already runs one. The CLI/MCP refuse a backend on port
+7860 that saves stories in a different folder (installed app vs. this checkout); quit the other one.
 
 The app finds its backend two ways (app/src-tauri/src/lib.rs): **dev** (`pnpm tauri dev`, any debug
 build, or `MANGA_STUDIO_ROOT` set) runs `uv run studio serve` in this repo, data in `stories/` and

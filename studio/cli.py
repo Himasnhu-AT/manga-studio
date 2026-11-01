@@ -19,6 +19,8 @@ URL = os.environ.get("STUDIO_URL", "http://127.0.0.1:7860")
 
 def _api(method: str, path: str, **kw):
     try:
+        if path != "/api/status" and (why := st.backend_mismatch(httpx.get(URL + "/api/status", timeout=30).json())):
+            sys.exit(f"wrong studio server at {URL}: {why}")
         r = httpx.request(method, URL + path, timeout=30, **kw)
     except httpx.ConnectError:
         sys.exit(f"studio server is not running at {URL}. Start it with: uv run studio serve")

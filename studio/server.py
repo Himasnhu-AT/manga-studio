@@ -164,7 +164,8 @@ def app_assets(path: str):
 
 @app.get("/api/status")
 def status():
-    return {"rev": _rev, **engine.status(), "queued": sum(j["status"] == "queued" for j in list(jobs.values()))}
+    return {"rev": _rev, **engine.status(), "queued": sum(j["status"] == "queued" for j in list(jobs.values())),
+            "stories": str(st.STORIES)}
 
 
 @app.get("/api/stories")
