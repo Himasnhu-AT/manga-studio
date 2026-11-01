@@ -21,6 +21,7 @@ import { Rail } from "./Rail";
 import { useStudio } from "./studioState";
 import { ActionBar, CanvasToolbar, setZoomLabel } from "./Toolbar";
 import { LayoutBars } from "./LayoutBars";
+import { UNPLACED_AT } from "../../lib/geometry";
 import { useLettering } from "./useLettering";
 
 export function Studio() {
@@ -178,7 +179,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
         const step = e.shiftKey ? 0.02 : 0.005;
         const [dx, dy] = arrows[e.key];
         const nudge = (at: [number, number]): [number, number] => [Math.round(Math.min(1, Math.max(0, at[0] + dx * step)) * 1000) / 1000, Math.round(Math.min(1, Math.max(0, at[1] + dy * step)) * 1000) / 1000];
-        if (sel.kind === "bubble") lettering.updateBubbles((bs) => bs.map((b, j) => (j === sel.i ? { ...b, at: nudge(b.at) } : b)));
+        if (sel.kind === "bubble") lettering.updateBubbles((bs) => bs.map((b, j) => (j === sel.i ? { ...b, at: nudge(b.at ?? UNPLACED_AT) } : b)));
         else lettering.updateSfx((ss) => ss.map((x, j) => (j === sel.i ? { ...x, at: nudge(x.at) } : x)));
         return;
       }

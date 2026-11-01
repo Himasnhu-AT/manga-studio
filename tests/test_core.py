@@ -359,6 +359,8 @@ def test_page_devices_validate_and_export(sample):
     gutter_px = (int(lx + 0.49 * lw), int(ly + 0.315 * lh))  # between the rows, no panel there
     assert sum(im.getpixel(gutter_px)) < 3 * 140  # black paper behind a 50% background
     svg = (root / next(f for f in files if f.endswith(".svg"))).read_text()
+    # frame lines: the bold bled panel and the pop-out panel; none for the borderless, cutout or empty slots
+    assert svg.count('fill="none" stroke="#19191e"') == 2
     assert 'class="page-background"' in svg and 'class="subject pop"' in svg and 'class="subject cutout"' in svg
 
     # clearing the cut-out falls back to a normal framed panel

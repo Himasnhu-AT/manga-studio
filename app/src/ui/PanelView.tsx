@@ -10,7 +10,7 @@ import type { Bubble, FxItem, Page, Panel, Sfx, SlotSubject, StoryDetail } from 
 import { layerUrl, subjectUrl, versionUrl } from "../lib/api";
 import { bubbleGeom, INK, LETTER_FONT, PAPER, sfxGeom, useFontRev } from "../lib/geometry";
 import { artFrame, autoCrop, pageDims, panelSize, polyClip } from "../lib/layout";
-import { cx } from "./kit";
+import { cx, ErrorBoundary } from "./kit";
 import "./panel.css";
 
 export interface LayerToggles {
@@ -47,7 +47,23 @@ export interface PanelViewProps {
   subjectMode?: SlotSubject;
 }
 
-export const PanelView = memo(function PanelView({
+/** One panel that fails to render shows a small notice instead of taking the page (or the app) down. */
+export const PanelView = memo(function PanelView(props: PanelViewProps) {
+  return (
+    <ErrorBoundary
+      resetKey={JSON.stringify([props.panel.pick, props.panel.bubbles, props.panel.sfx, props.panel.drawing, props.bubbles])}
+      fallback={(e) => (
+        <div className={cx("flex items-center justify-center bg-[#fdeeee] p-2 text-center text-[11.5px] text-err", props.className)} style={{ aspectRatio: props.slotAspect ? undefined : "3 / 4" }} title={e.message}>
+          Couldn't draw {props.panel.id}: {e.message}
+        </div>
+      )}
+    >
+      <PanelViewInner {...props} />
+    </ErrorBoundary>
+  );
+});
+
+const PanelViewInner = memo(function PanelViewInner({
   slug,
   panel,
   story,

@@ -319,7 +319,8 @@ export function artFrame(imgAspect: number, slotAspect: number, crop?: { x: numb
  */
 export function autoCrop(p: Panel, imgAspect: number, slotAspect: number): { x: number; y: number; scale: number } | undefined {
   if (p.crop) return p.crop;
-  const items = [...(p.bubbles ?? []).map((b) => b.at), ...(p.sfx ?? []).map((s) => s.at)];
+  // lines from the Story editor may have no position yet: they don't count until placed
+  const items = [...(p.bubbles ?? []).map((b) => b.at), ...(p.sfx ?? []).map((s) => s.at)].filter((a): a is Vec2 => Array.isArray(a));
   if (!items.length || imgAspect >= slotAspect) return undefined; // only vertical overflow needs help
   const visible = imgAspect / slotAspect; // fraction of the image height that fits
   const top = Math.max(0, Math.min(...items.map((a) => a[1])) - 0.09);

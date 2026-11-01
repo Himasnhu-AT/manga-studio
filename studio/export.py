@@ -256,6 +256,8 @@ def render_page(story: Story, page: dict, geo: dict) -> Image.Image:
     _page_background(story, page, canvas)
     for slot in page.get("panels") or []:
         pid = slot.get("panel")
+        if not pid:
+            continue  # an empty slot is a placeholder in the Studio; it prints nothing
         x, y, w, h = _slot_px(slot, geo["live"], (geo["W"], geo["H"]))
         poly = _poly_px(slot, x, y, w, h)
         clip = Image.new("L", canvas.size, 0)
@@ -385,6 +387,8 @@ def page_svg(story: Story, page: dict, geo: dict) -> str:
             body.append(f'<image class="page-background" x="{l * W / 100:.1f}" y="{t * H / 100:.1f}" width="{fw * W / 100:.1f}" height="{fh * H / 100:.1f}" opacity="{op:.2f}" preserveAspectRatio="none" href="{_data_uri(art)}"/>')
     for k, slot in enumerate(page.get("panels") or []):
         pid = slot.get("panel")
+        if not pid:
+            continue
         x, y, w, h = _slot_px(slot, geo["live"], (W, H))
         poly = _poly_px(slot, x, y, w, h)
         cid = f"clip-{page['id']}-{k}"

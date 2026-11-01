@@ -5,6 +5,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { CheckCircle, Info, WarningCircle, X } from "@phosphor-icons/react";
 import {
+  Component,
   forwardRef,
   useEffect,
   useId,
@@ -330,4 +331,22 @@ export function Section({ title, action, children, className }: { title: string;
       {children}
     </section>
   );
+}
+
+/** Catches a render error below it and shows `fallback` instead of blanking the whole app. `resetKey`
+ *  changing gives the children another try (e.g. the panel's data was fixed). */
+export class ErrorBoundary extends Component<{ fallback: (error: Error, retry: () => void) => ReactNode; resetKey?: unknown; children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error) {
+    console.error("[Manga Studio] render error:", error);
+  }
+  componentDidUpdate(prev: { resetKey?: unknown }) {
+    if (this.state.error && prev.resetKey !== this.props.resetKey) this.setState({ error: null });
+  }
+  render() {
+    return this.state.error ? this.props.fallback(this.state.error, () => this.setState({ error: null })) : this.props.children;
+  }
 }
