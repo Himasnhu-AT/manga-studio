@@ -53,7 +53,7 @@ When `manga-studio` MCP tools are available (registered with
 the same running backend the app uses, and `view_image` hands you the picture directly. Tools:
 `list_projects`, `get_project`, `create_project`, `update_story`, `update_panel`, `add_panel`,
 `set_cast`, `prompt_preview`, `generate`, `copilot`, `segment`, `edit_image`, `view_image`, `jobs`, `get_feedback`,
-`resolve_note`, `pick_version`, `auto_letter`, `set_pages`, `auto_layout`, `export`, `pipeline_new`, `pipeline_status`,
+`resolve_note`, `pick_version`, `auto_letter`, `set_pages`, `cut_out_character`, `auto_layout`, `export`, `pipeline_new`, `pipeline_status`,
 `pipeline_run`, `pipeline_task`, `pipeline_submit`.
 
 Use the CLI (and Read on PNG paths) when MCP isn't connected, for `video`/`compose`, or when you need
@@ -130,6 +130,8 @@ blocks: {style: ..., setting: ...}   # blocks[<cast id>] if present wins over th
 avoid: "t-shirt, navy hair, any text"
 pages:                      # page mode layout; boxes are fractions of the live area
   - {id: pg1, panels: [{panel: p01, box: [0, 0, 1, 0.32]}, {panel: p02, box: [0, 0.34, 0.49, 0.3], poly: [[0,0],[1,0],[1,0.85],[0,1]]}]}
+  # manga page devices: page {paper: black, background: {panel: p06, opacity: 0.35}}; slot {border: bold|thin|none,
+  # bleed: true, subject: pop|cutout (needs POST /panels/<pid>/subject first)}; later slots overlap earlier ones
 panels:
   - id: sheet               # reference panel: strip: false, other panels use it via refs: [sheet]
     strip: false

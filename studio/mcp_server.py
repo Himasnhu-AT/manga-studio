@@ -138,8 +138,25 @@ def update_story(story: str, changes: dict) -> dict:
 def set_pages(story: str, pages: list[dict]) -> dict:
     """Lay out page mode by hand. pages: [{id: "pg1", panels: [{panel: "p01", box: [x, y, w, h]}, ...]}];
     boxes are fractions of the page's live area. Match a slot's shape to its art (a 3:4 panel in a wide
-    slot gets cropped to a strip); in RTL the first panel goes top right."""
+    slot gets cropped to a strip); in RTL the first panel goes top right.
+
+    Manga page devices. Page: paper "black" (flashback), background {panel, opacity 0..1} (a giant face or
+    mood behind every panel). Slot: poly (slants, any shape), border "bold" | "thin" | "none" (borderless),
+    bleed true (runs off the page edge), subject "pop" (the character breaks out over the frame) or "cutout"
+    (no frame, the character floats). subject needs a cut-out first: cut_out_character. Slots draw in order,
+    so a later small box overlapping a big one is an inset panel. panel "" is an empty slot."""
     return _api("PUT", f"/api/stories/{story}/pages", json={"pages": pages})
+
+
+@server.tool()
+def cut_out_character(story: str, panel: str, point: list[float] | None = None, clear: bool = False) -> dict:
+    """Cut the character out of a panel's picked version, for page slots with subject "pop" or "cutout".
+    Apple Vision finds the figures; pass point [x, y] (fractions of the image) to pick one. clear=True removes it.
+    Redo it after picking a different version."""
+    body: dict[str, Any] = {"clear": clear}
+    if point is not None:
+        body["point"] = point
+    return _api("POST", f"/api/stories/{story}/panels/{panel}/subject", json=body)
 
 
 @server.tool()
