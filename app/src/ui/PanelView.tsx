@@ -7,7 +7,7 @@
 
 import { memo, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type { Bubble, FxItem, Page, Panel, Sfx, SlotSubject, StoryDetail } from "../lib/api";
-import { subjectUrl, versionUrl } from "../lib/api";
+import { layerUrl, subjectUrl, versionUrl } from "../lib/api";
 import { bubbleGeom, INK, LETTER_FONT, PAPER, sfxGeom, useFontRev } from "../lib/geometry";
 import { artFrame, autoCrop, pageDims, panelSize, polyClip } from "../lib/layout";
 import { cx } from "./kit";
@@ -79,7 +79,16 @@ export const PanelView = memo(function PanelView({
     fx: layers.fx && pl.fx?.visible !== false,
     lettering: layers.lettering && pl.lettering?.visible !== false,
   };
+  const drawn = (panel.drawing ?? []).filter((l) => l.visible !== false && panel.drawing_files?.[l.id] !== undefined);
   const src = panel.pick ? versionUrl(slug, panel.id, panel.pick) : null;
+  // the artist's layers: over the art, under tone and lettering (compose.render_panel)
+  const drawing = show.art && drawn.length > 0 && (
+    <>
+      {drawn.map((l) => (
+        <img key={l.id} src={layerUrl(slug, panel.id, l.id, panel.drawing_files?.[l.id])} alt="" draggable={false} className="pointer-events-none absolute inset-0 size-full object-fill" style={{ opacity: l.opacity ?? 1 }} />
+      ))}
+    </>
+  );
   const mask = subjectMode && src ? subjectUrl(slug, panel.subject) : null;
   const frameStyle = { left: `${frame.left}%`, top: `${frame.top}%`, width: `${frame.width}%`, height: `${frame.height}%` };
   const bg = show.background ? (pl.background?.color ?? "#ffffff") : "transparent";
@@ -90,7 +99,8 @@ export const PanelView = memo(function PanelView({
       <div className={cx("relative overflow-hidden", className)} style={{ aspectRatio: slotAspect ? undefined : `${W} / ${H}`, clipPath: polyClip(poly), background: bg }}>
         <div className="absolute" style={frameStyle}>
           {show.art && src && <Art src={src} eager={eager} />}
-          {!src && empty}
+          {!src && !drawing && empty}
+          {drawing}
           {show.fx && pl.fx?.items?.length ? <FxLayer items={pl.fx.items} W={W} H={H} /> : null}
         </div>
         <Border px={borderPx} poly={poly} />
@@ -112,6 +122,7 @@ export const PanelView = memo(function PanelView({
         <div className="absolute inset-0 overflow-hidden" style={{ clipPath: polyClip(poly), background: bg }}>
           <div className="absolute" style={frameStyle}>
             {show.art && <Art src={src!} eager={eager} />}
+            {drawing}
             {show.fx && pl.fx?.items?.length ? <FxLayer items={pl.fx.items} W={W} H={H} /> : null}
           </div>
           <Border px={borderPx} poly={poly} />

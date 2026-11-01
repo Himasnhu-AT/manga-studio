@@ -15,6 +15,8 @@ interface StudioState {
   editImage: boolean;
   /** Refine sketch: the selected panel's drawing beside its refined versions. */
   refine: boolean;
+  /** Draw mode: pens, pencil and layers on the selected panel. */
+  draw: boolean;
   inspector: boolean;
   sel: Sel;
   editing: number | null; // bubble index with the inline text editor open
@@ -30,6 +32,7 @@ interface StudioState {
   setLayoutMode: (v: boolean) => void;
   setEditImage: (v: boolean) => void;
   setRefine: (v: boolean) => void;
+  setDraw: (v: boolean) => void;
   setInspector: (v: boolean) => void;
   setSel: (s: Sel) => void;
   setEditing: (i: number | null) => void;
@@ -45,6 +48,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   layoutMode: false,
   editImage: false,
   refine: false,
+  draw: false,
   inspector: true,
   sel: null,
   editing: null,
@@ -54,9 +58,10 @@ export const useStudio = create<StudioState>((set, get) => ({
   pickSubject: null,
   setTool: (tool) => set({ tool, ...(tool !== "select" ? { editing: null } : {}) }),
   toggleLayer: (k) => set({ layers: { ...get().layers, [k]: !get().layers[k] } }),
-  setLayoutMode: (layoutMode) => set({ layoutMode, sel: null, editing: null, slotSel: null, pickSubject: null, ...(layoutMode ? { editImage: false } : {}) }),
-  setEditImage: (editImage) => set({ editImage, sel: null, editing: null, ...(editImage ? { layoutMode: false } : {}) }),
-  setRefine: (refine) => set({ refine, sel: null, editing: null, ...(refine ? { editImage: false, layoutMode: false } : {}) }),
+  setLayoutMode: (layoutMode) => set({ layoutMode, sel: null, editing: null, slotSel: null, pickSubject: null, ...(layoutMode ? { editImage: false, draw: false, refine: false } : {}) }),
+  setEditImage: (editImage) => set({ editImage, sel: null, editing: null, ...(editImage ? { layoutMode: false, draw: false, refine: false } : {}) }),
+  setRefine: (refine) => set({ refine, sel: null, editing: null, ...(refine ? { editImage: false, layoutMode: false, draw: false } : {}) }),
+  setDraw: (draw) => set({ draw, sel: null, editing: null, ...(draw ? { editImage: false, layoutMode: false, refine: false } : {}) }),
   setInspector: (inspector) => set({ inspector }),
   setSel: (sel) => set({ sel, ...(sel?.kind !== "bubble" || sel.i !== get().editing ? { editing: null } : {}) }),
   setEditing: (editing) => set({ editing }),

@@ -13,6 +13,7 @@ import { Canvas, PAGE_BASE, type CanvasHandle } from "./Canvas";
 import { CastStudio } from "./CastStudio";
 import { ImageEditor } from "./ImageEditor";
 import { Refine } from "./Refine";
+import { DrawEditor } from "./DrawEditor";
 import { Inspector } from "./Inspector";
 import { Rail } from "./Rail";
 import { useStudio } from "./studioState";
@@ -43,7 +44,7 @@ export function Studio() {
 
 function StudioBody({ story }: { story: StoryDetail }) {
   const { panel: selectedId, page: pageIdx, setPage, selectPanel, go } = useApp();
-  const { inspector, layoutMode, editImage, setEditImage, refine, setRefine } = useStudio();
+  const { inspector, layoutMode, editImage, setEditImage, refine, setRefine, draw, setDraw } = useStudio();
   const canvas = useRef<CanvasHandle>(null);
   const [castOpen, setCastOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -111,7 +112,8 @@ function StudioBody({ story }: { story: StoryDetail }) {
   useEffect(() => {
     if (editImage && !selected) setEditImage(false);
     if (refine && !selected?.pick) setRefine(false);
-  }, [editImage, selected, setEditImage, refine, setRefine]);
+    if (draw && !selected) setDraw(false);
+  }, [editImage, selected, setEditImage, refine, setRefine, draw, setDraw]);
 
   // ---- keyboard ----------------------------------------------------------------------
   useEffect(() => {
@@ -119,7 +121,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
     const down = (e: KeyboardEvent) => {
       if (typing(e.target)) return;
       const st = useStudio.getState();
-      if (st.editImage || st.refine) return; // the image editor / refine view own the keyboard while open
+      if (st.editImage || st.refine || st.draw) return; // the image editor / refine view own the keyboard while open
       if (e.metaKey || e.ctrlKey) {
         if (e.key === "0") (e.preventDefault(), canvas.current?.fit(false));
         else if (e.key === "=" || e.key === "+") (e.preventDefault(), canvas.current?.zoomBy(1.25));
@@ -261,6 +263,11 @@ function StudioBody({ story }: { story: StoryDetail }) {
               <ImageEditor story={story} panel={selected} pageMode={mode === "page"} />
             </motion.div>
           )}
+          {draw && selected && (
+            <motion.div key={`draw-${selected.id}`} className="absolute inset-0 z-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+              <DrawEditor story={story} panel={selected} />
+            </motion.div>
+          )}
           {refine && selected?.pick && (
             <motion.div key={`refine-${selected.id}`} className="absolute inset-0 z-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
               <Refine story={story} panel={selected} />
@@ -270,7 +277,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
       </div>
 
       <AnimatePresence initial={false}>
-        {inspector && (
+        {inspector && !draw && (
           <motion.aside
             key="inspector"
             className="w-[320px] shrink-0 overflow-y-auto border-l border-line bg-paper"

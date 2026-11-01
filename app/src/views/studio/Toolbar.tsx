@@ -13,6 +13,7 @@ import {
   MagicWand,
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
+  PencilSimple,
   SidebarSimple,
   Stack,
   TextT,
@@ -54,25 +55,33 @@ const LAYERS: { k: keyof LayerToggles; label: string }[] = [
   { k: "lettering", label: "Lettering" },
 ];
 
-type StudioMode = "letter" | "layout" | "edit";
+type StudioMode = "draw" | "letter" | "layout" | "edit";
 
-/** One obvious switch for what the canvas is doing: lettering, page layout, or editing the picture itself. */
+/** One obvious switch for what the canvas is doing: drawing, lettering, page layout, or editing the picture. */
 export function ModeSwitch({ pageMode, canEdit }: { pageMode: boolean; canEdit: boolean }) {
-  const { layoutMode, editImage, setLayoutMode, setEditImage } = useStudio();
-  const mode: StudioMode = editImage ? "edit" : layoutMode ? "layout" : "letter";
+  const { layoutMode, editImage, draw, setLayoutMode, setEditImage, setDraw } = useStudio();
+  const hasPanel = useApp((s) => !!s.panel);
+  const mode: StudioMode = draw ? "draw" : editImage ? "edit" : layoutMode ? "layout" : "letter";
   const set = (m: StudioMode) => {
     if (m === "edit" && !canEdit) {
       useApp.getState().toast("Select a panel that has a picture to edit it", "info");
       return;
     }
-    if (m === "edit") setEditImage(true);
+    if (m === "draw" && !hasPanel) {
+      useApp.getState().toast("Select a panel to draw on it", "info");
+      return;
+    }
+    if (m === "draw") setDraw(true);
+    else if (m === "edit") setEditImage(true);
     else if (m === "layout") setLayoutMode(true);
     else {
+      setDraw(false);
       setEditImage(false);
       setLayoutMode(false);
     }
   };
   const opts: { value: StudioMode; label: React.ReactNode; title: string }[] = [
+    { value: "draw", label: <><PencilSimple size={14} />Draw</>, title: "Blue pencil, pens and layers on the selected panel" },
     { value: "letter", label: <><ChatCircle size={14} />Letter</>, title: "Bubbles and sound effects" },
     ...(pageMode ? [{ value: "layout" as const, label: <><Layout size={14} />Layout</>, title: "Page slots, gutters and framing" }] : []),
     { value: "edit", label: <><MagicWand size={14} />Edit image</>, title: "Select, move, erase and fix the picture" },

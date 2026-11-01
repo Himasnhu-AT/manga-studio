@@ -44,6 +44,9 @@ export const fileUrl = (slug: string, rel: string, v?: number | string | null) =
 
 export const versionUrl = (slug: string, pid: string, file: string) => fileUrl(slug, `out/${pid}/${file}`);
 
+/** URL of one drawing layer's pixels, cache-busted by its mtime. */
+export const layerUrl = (slug: string, pid: string, lid: string, v?: number | null) => fileUrl(slug, `out/${pid}/drawing/${lid}.png`, v ?? undefined);
+
 /** The panel's cut-out character mask (served path + cache-buster from the server). */
 export const subjectUrl = (slug: string, subject: string | null | undefined) => {
   if (!subject) return null;
@@ -133,7 +136,23 @@ export interface Panel {
   final: number | null;
   /** The cut-out character mask for the picked version (out/<pid>/masks/...), if one was made. */
   subject: string | null;
+  /** Hand-drawn layers, bottom to top (pixels in out/<pid>/drawing/<id>.png). */
+  drawing?: DrawLayer[];
+  /** Layer id -> file mtime, for layers that have pixels. */
+  drawing_files?: Record<string, number | null>;
+  /** Where the panel is in the traditional production order. */
+  stage?: Stage;
 }
+
+export interface DrawLayer {
+  id: string;
+  name: string;
+  opacity?: number;
+  visible?: boolean;
+}
+
+export const STAGES = ["name", "pencils", "inks", "blacks", "tone", "finish", "letters"] as const;
+export type Stage = (typeof STAGES)[number];
 
 export interface CastMember {
   name: string;
@@ -359,6 +378,9 @@ export const Api = {
   deleteCast: (slug: string, cid: string) => api(`${s(slug)}/cast/${cid}`, { method: "DELETE" }),
   refine: (slug: string, pid: string, b: { preset: "clean" | "inks" | "tone" | "color"; strength?: number; count?: number; source?: string; prompt?: string }) =>
     api<{ jobs: number[]; seeds: number[]; source: string; strength: number }>(`${s(slug)}/panels/${pid}/refine`, { body: b }),
+  putLayer: (slug: string, pid: string, lid: string, png: string) => api(`${s(slug)}/panels/${pid}/drawing/${lid}`, { method: "PUT", body: { png } }),
+  deleteLayer: (slug: string, pid: string, lid: string) => api(`${s(slug)}/panels/${pid}/drawing/${lid}`, { method: "DELETE" }),
+  mergeDrawing: (slug: string, pid: string) => api<{ file: string }>(`${s(slug)}/panels/${pid}/drawing/merge`, { body: {} }),
   importArt: (slug: string, pid: string, file: File) => {
     const f = new FormData();
     f.append("file", file);
