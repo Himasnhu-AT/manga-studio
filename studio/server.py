@@ -893,7 +893,8 @@ def apply_scan(slug: str, req: ScanApplyReq):
             lx1, ly1 = (x + w - mx) / (1 - 2 * mx), (y + h - my) / (1 - 2 * my)
             bleed = lx0 < -0.01 or ly0 < -0.01 or lx1 > 1.01 or ly1 > 1.01
             lx0, ly0, lx1, ly1 = max(0.0, lx0), max(0.0, ly0), min(1.0, lx1), min(1.0, ly1)
-            slot = {"panel": pid, "box": [round(lx0, 4), round(ly0, 4), round(lx1 - lx0, 4), round(ly1 - ly0, 4)]}
+            # the crop already holds the artist's own frame line, so the slot draws none
+            slot = {"panel": pid, "box": [round(lx0, 4), round(ly0, 4), round(lx1 - lx0, 4), round(ly1 - ly0, 4)], "border": "none"}
             if bleed:
                 slot["bleed"] = True
             slots.append(slot)

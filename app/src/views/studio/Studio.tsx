@@ -14,6 +14,7 @@ import { CastStudio } from "./CastStudio";
 import { ImageEditor } from "./ImageEditor";
 import { Refine } from "./Refine";
 import { DrawEditor } from "./DrawEditor";
+import { ScanReview } from "./ScanReview";
 import { Inspector } from "./Inspector";
 import { Rail } from "./Rail";
 import { useStudio } from "./studioState";
@@ -44,7 +45,9 @@ export function Studio() {
 
 function StudioBody({ story }: { story: StoryDetail }) {
   const { panel: selectedId, page: pageIdx, setPage, selectPanel, go } = useApp();
-  const { inspector, layoutMode, editImage, setEditImage, refine, setRefine, draw, setDraw } = useStudio();
+  const { inspector, layoutMode, editImage, setEditImage, refine, setRefine, draw, setDraw, scan } = useStudio();
+  // a scanned page just became panels: jump to its page once the story has it
+  const [goPage, setGoPage] = useState<string | null>(null);
   const canvas = useRef<CanvasHandle>(null);
   const [castOpen, setCastOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -92,6 +95,15 @@ function StudioBody({ story }: { story: StoryDetail }) {
     };
   }, [flushPages]);
 
+  useEffect(() => {
+    if (!goPage) return;
+    const i = (story.pages ?? []).findIndex((p) => p.id === goPage);
+    if (i >= 0) {
+      setPage(i);
+      setGoPage(null);
+    }
+  }, [goPage, story.pages, setPage]);
+
   // keep the page index valid; follow the selected panel to its page
   useEffect(() => {
     if (pageIdx >= pages.length && pages.length) setPage(pages.length - 1);
@@ -121,7 +133,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
     const down = (e: KeyboardEvent) => {
       if (typing(e.target)) return;
       const st = useStudio.getState();
-      if (st.editImage || st.refine || st.draw) return; // the image editor / refine view own the keyboard while open
+      if (st.editImage || st.refine || st.draw || st.scan) return; // the image editor / refine view own the keyboard while open
       if (e.metaKey || e.ctrlKey) {
         if (e.key === "0") (e.preventDefault(), canvas.current?.fit(false));
         else if (e.key === "=" || e.key === "+") (e.preventDefault(), canvas.current?.zoomBy(1.25));
@@ -263,6 +275,18 @@ function StudioBody({ story }: { story: StoryDetail }) {
               <ImageEditor story={story} panel={selected} pageMode={mode === "page"} />
             </motion.div>
           )}
+          {scan && (
+            <motion.div key="scan" className="absolute inset-0 z-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+              <ScanReview
+                story={story}
+                draft={scan}
+                onCreated={(pageId, panels) => {
+                  setGoPage(pageId);
+                  if (panels[0]) selectPanel(panels[0]);
+                }}
+              />
+            </motion.div>
+          )}
           {draw && selected && (
             <motion.div key={`draw-${selected.id}`} className="absolute inset-0 z-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
               <DrawEditor story={story} panel={selected} />
@@ -277,7 +301,7 @@ function StudioBody({ story }: { story: StoryDetail }) {
       </div>
 
       <AnimatePresence initial={false}>
-        {inspector && !draw && (
+        {inspector && !draw && !scan && (
           <motion.aside
             key="inspector"
             className="w-[320px] shrink-0 overflow-y-auto border-l border-line bg-paper"

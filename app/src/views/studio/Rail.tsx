@@ -2,12 +2,14 @@
 // slots (HTML5 DnD, type application/x-panel) and onto each other to reorder.
 
 import { useState } from "react";
-import { DotsSixVertical, Plus, Trash } from "@phosphor-icons/react";
+import { DotsSixVertical, Plus, Trash, UploadSimple } from "@phosphor-icons/react";
 import { Api, api, type Page, type Panel, type StoryDetail, versionUrl } from "../../lib/api";
 import { applyTemplate, pageDims, stripPanels } from "../../lib/layout";
 import { attempt, useApp } from "../../lib/store";
 import { PanelView } from "../../ui/PanelView";
 import { Badge, Button, IconButton, Segmented, cx } from "../../ui/kit";
+import { ART_ACCEPT } from "./importArt";
+import { startScan } from "./ScanReview";
 
 const THUMB_LAYERS = { background: true, art: true, fx: false, lettering: false };
 
@@ -75,6 +77,21 @@ export function Rail({
           <section className="flex flex-col gap-2 border-b border-line p-3">
             <div className="flex items-center justify-between">
               <h3 className="type-label">Pages</h3>
+              <span className="flex-1" />
+              <label className="pressable flex size-7 cursor-pointer items-center justify-center rounded-[var(--radius-control)] text-ink-2 hover:bg-wash hover:text-ink" title="Import a scanned or drawn page: its panels are found for you">
+                <UploadSimple size={14} />
+                <span className="sr-only">Import a scanned page</span>
+                <input
+                  type="file"
+                  accept={ART_ACCEPT}
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void startScan(story.slug, f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
               <IconButton
                 label="Add page"
                 size="sm"

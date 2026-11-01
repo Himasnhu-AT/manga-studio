@@ -378,6 +378,13 @@ export const Api = {
   deleteCast: (slug: string, cid: string) => api(`${s(slug)}/cast/${cid}`, { method: "DELETE" }),
   refine: (slug: string, pid: string, b: { preset: "clean" | "inks" | "tone" | "color"; strength?: number; count?: number; source?: string; prompt?: string }) =>
     api<{ jobs: number[]; seeds: number[]; source: string; strength: number }>(`${s(slug)}/panels/${pid}/refine`, { body: b }),
+  scanPage: (slug: string, file: File) => {
+    const f = new FormData();
+    f.append("file", file);
+    return api<{ scan: string; size: [number, number]; panels: { box: Box; unclear: boolean }[] }>(`${s(slug)}/pages/scan`, { form: f });
+  },
+  applyScan: (slug: string, b: { scan: string; boxes: number[][]; stage?: Stage; title?: string }) =>
+    api<{ page: string; panels: string[] }>(`${s(slug)}/pages/scan/apply`, { body: b }),
   putLayer: (slug: string, pid: string, lid: string, png: string) => api(`${s(slug)}/panels/${pid}/drawing/${lid}`, { method: "PUT", body: { png } }),
   deleteLayer: (slug: string, pid: string, lid: string) => api(`${s(slug)}/panels/${pid}/drawing/${lid}`, { method: "DELETE" }),
   mergeDrawing: (slug: string, pid: string) => api<{ file: string }>(`${s(slug)}/panels/${pid}/drawing/merge`, { body: {} }),

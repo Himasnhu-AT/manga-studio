@@ -1,5 +1,14 @@
 import { create } from "zustand";
+import type { Box } from "../../lib/api";
 import type { LayerToggles } from "../../ui/PanelView";
+
+/** A scanned page waiting for review (from POST /pages/scan). */
+export interface ScanDraft {
+  scan: string;
+  name: string;
+  size: [number, number];
+  panels: { box: Box; unclear: boolean }[];
+}
 
 // Studio-local UI state (tools, layer toggles, selection inside a panel). Panel selection itself
 // lives in the app store (useApp.panel) so other views can deep-link into it.
@@ -17,6 +26,8 @@ interface StudioState {
   refine: boolean;
   /** Draw mode: pens, pencil and layers on the selected panel. */
   draw: boolean;
+  /** A scanned page being reviewed before it becomes panels. */
+  scan: ScanDraft | null;
   inspector: boolean;
   sel: Sel;
   editing: number | null; // bubble index with the inline text editor open
@@ -33,6 +44,7 @@ interface StudioState {
   setEditImage: (v: boolean) => void;
   setRefine: (v: boolean) => void;
   setDraw: (v: boolean) => void;
+  setScan: (s: ScanDraft | null) => void;
   setInspector: (v: boolean) => void;
   setSel: (s: Sel) => void;
   setEditing: (i: number | null) => void;
@@ -49,6 +61,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   editImage: false,
   refine: false,
   draw: false,
+  scan: null,
   inspector: true,
   sel: null,
   editing: null,
@@ -62,6 +75,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   setEditImage: (editImage) => set({ editImage, sel: null, editing: null, ...(editImage ? { layoutMode: false, draw: false, refine: false } : {}) }),
   setRefine: (refine) => set({ refine, sel: null, editing: null, ...(refine ? { editImage: false, layoutMode: false, draw: false } : {}) }),
   setDraw: (draw) => set({ draw, sel: null, editing: null, ...(draw ? { editImage: false, layoutMode: false, refine: false } : {}) }),
+  setScan: (scan) => set({ scan, ...(scan ? { editImage: false, layoutMode: false, refine: false, draw: false } : {}) }),
   setInspector: (inspector) => set({ inspector }),
   setSel: (sel) => set({ sel, ...(sel?.kind !== "bubble" || sel.i !== get().editing ? { editing: null } : {}) }),
   setEditing: (editing) => set({ editing }),

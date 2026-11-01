@@ -482,6 +482,7 @@ def test_scan_import_creates_panels_and_a_page(sample):
     page = next(pg for pg in s.data["pages"] if pg["id"] == out["page"])
     assert [sl["panel"] for sl in page["panels"]] == out["panels"]
     assert page["panels"][3].get("bleed") is True and not page["panels"][0].get("bleed")
+    assert all(sl["border"] == "none" for sl in page["panels"])  # the scan has the artist's own frame lines
     p = s.panel(out["panels"][1])
     assert p["stage"] == "pencils"
     v = st.picked_version(s, p["id"])
@@ -501,3 +502,14 @@ def test_detect_panels_without_opencv(monkeypatch):
     rects = [(80, 80, 1160, 560), (80, 600, 1160, 1670)]
     found = pagescan.detect_panels(_page_with_panels(rects), rtl=True)
     assert len(found) == 2 and abs(found[1]["box"][1] - 600 / 1754) < 0.02
+
+
+def test_detect_splits_panels_joined_by_a_bubble():
+    from studio import pagescan
+
+    page = _page_with_panels([(80, 1120, 560, 1670), (600, 1120, 1160, 1670), (80, 80, 1160, 1080)])
+    ImageDraw.Draw(page).ellipse([480, 1180, 700, 1300], outline=(20, 20, 20), width=5, fill="white")  # bubble over the gutter
+    found = pagescan.detect_panels(page, rtl=True)
+    assert len(found) == 3
+    right, left = found[1]["box"], found[2]["box"]
+    assert abs(right[0] - 600 / 1240) < 0.02 and abs(left[0] - 80 / 1240) < 0.01 and left[0] + left[2] < 0.5

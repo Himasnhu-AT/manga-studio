@@ -2,9 +2,10 @@
 
 Gutters are the light paper that connects to the page edge. Everything the gutter flood can't reach is
 inside a panel (its border, art and white interior), so each large connected region left over is a panel.
-Works for bordered panels on white paper, which is how most hand-drawn pages are made. Known limits, left
-for the artist to fix in the review step: panels that touch with no gutter, or a bubble bridging two panels,
-come out as one box; a bleed panel whose white art reaches the page edge can be missed.
+Works for bordered panels on white paper, which is how most hand-drawn pages are made. Panels joined by a
+bubble or a figure crossing the gutter are cut apart along the paper that still runs between them. Known
+limits, left for the review step: panels that touch with no gutter at all come out as one box; a bleed panel
+whose white art reaches the page edge can be missed.
 """
 
 from __future__ import annotations
@@ -84,6 +85,43 @@ def _components(mask: np.ndarray) -> list[tuple[int, int, int, int, int]]:
         return out
 
 
+def _split(paper: np.ndarray, x0: int, y0: int, x1: int, y1: int, depth: int = 0) -> list[tuple[int, int, int, int]]:
+    """Cut a region along gutters that run (mostly) through it: two panels joined by a speech bubble or a
+    character crossing the gutter still have paper between them for most of their length."""
+    if depth > 3:
+        return [(x0, y0, x1, y1)]
+    sub = paper[y0:y1, x0:x1]
+    h, w = sub.shape
+    for axis, length, size in ((0, h, w), (1, w, h)):  # axis 0: vertical gutters (columns), 1: horizontal (rows)
+        profile = sub.mean(axis=axis)
+        margin = max(3, int(size * 0.08))
+        hit = np.nonzero(profile[margin : size - margin] > 0.55)[0]
+        if not len(hit):
+            continue
+        # the widest run of gutter columns/rows
+        runs, start = [], hit[0]
+        for a, b in zip(hit, hit[1:]):
+            if b != a + 1:
+                runs.append((start, a))
+                start = b
+        runs.append((start, hit[-1]))
+        s, e = max(runs, key=lambda r: r[1] - r[0])
+        s, e = s + margin, e + margin + 1
+        if axis == 0:
+            parts = [(x0, y0, x0 + s, y1), (x0 + e, y0, x1, y1)]
+        else:
+            parts = [(x0, y0, x1, y0 + s), (x0, y0 + e, x1, y1)]
+        out = []
+        for px0, py0, px1, py1 in parts:
+            # trim paper around each part, then look for more gutters inside it
+            inner = ~paper[py0:py1, px0:px1]
+            ys, xs = np.nonzero(inner)
+            if len(xs):
+                out += _split(paper, px0 + xs.min(), py0 + ys.min(), px0 + xs.max() + 1, py0 + ys.max() + 1, depth + 1)
+        return out
+    return [(x0, y0, x1, y1)]
+
+
 def reading_order(boxes: list[list[float]], rtl: bool) -> list[list[float]]:
     """Top-to-bottom rows, then right-to-left (manga) or left-to-right within a row (layout.ts orderSlots)."""
     import functools
@@ -111,12 +149,15 @@ def detect_panels(img: Image.Image, rtl: bool = True) -> list[dict]:
     h, w = a.shape
     paper = _flood_from_edges(a >= LIGHT)
     found = []
-    for x0, y0, x1, y1, area in _components(~paper):
-        bw, bh = (x1 - x0) / w, (y1 - y0) / h
-        if bw * bh < MIN_AREA or bw < MIN_SIDE or bh < MIN_SIDE:
-            continue  # page numbers, notes in the margin, specks
-        fill = area / max(1, (x1 - x0) * (y1 - y0))  # a bordered rectangle fills its box
-        found.append({"box": [round(x0 / w, 4), round(y0 / h, 4), round(bw, 4), round(bh, 4)], "fill": fill})
+    for cx0, cy0, cx1, cy1, _ in _components(~paper):
+        if (cx1 - cx0) * (cy1 - cy0) < MIN_AREA * w * h:
+            continue
+        for x0, y0, x1, y1 in _split(paper, cx0, cy0, cx1, cy1):
+            bw, bh = (x1 - x0) / w, (y1 - y0) / h
+            if bw * bh < MIN_AREA or bw < MIN_SIDE or bh < MIN_SIDE:
+                continue  # page numbers, notes in the margin, specks
+            fill = float((~paper[y0:y1, x0:x1]).mean())  # a bordered rectangle fills its box
+            found.append({"box": [round(x0 / w, 4), round(y0 / h, 4), round(bw, 4), round(bh, 4)], "fill": fill})
     if not found:
         return []
     areas = sorted(b["box"][2] * b["box"][3] for b in found)
