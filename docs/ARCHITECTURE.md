@@ -121,6 +121,10 @@ panels:
       fx: {visible: true, items: [{type: screentone, density: 0.5, opacity: 0.25, angle: 45}]}   # screentone | speedlines | focuslines
       lettering: {visible: true}
     protect: [[0.3, 0.2, 0.25, 0.25]]   # face / no-bubble boxes [x,y,w,h] fractions of panel
+    stage: inks                  # name | pencils | inks | blacks | tone | finish | letters (traditional order)
+    drawing:                     # hand-drawn layers, bottom to top; pixels in out/<pid>/drawing/<id>.png
+      - {id: rough, name: Rough, opacity: 0.45}
+      - {id: inks, name: Inks, visible: true}
     bubbles:
       - {id: b1, text: "Hi!", at: [0.7, 0.1], w: 0.4, tail: [0.62, 0.3], style: speech, size: 1.0, vertical: false}
     sfx:
@@ -150,6 +154,12 @@ v0.1: `GET /api/status`, `GET /api/stories`, `GET /api/stories/{slug}`, `POST /a
 | DELETE | /api/stories/{slug}/panels/{pid} | | `{ok}` |
 | PUT | /api/stories/{slug}/panels/order | `{order: [ids]}` (every panel id exactly once) | `{ok, order}` |
 | PUT | /api/stories/{slug}/pages | `{pages: [...]}` | `{ok}` |
+| POST | /api/stories/{slug}/panels/{pid}/import | multipart `file` (PNG, JPG, WebP, PSD, TIFF, BMP) | `{file}`: the artist's drawing becomes the next version (seed 0, `engine: import`) and is put in use |
+| POST | /api/stories/{slug}/panels/{pid}/refine | `{preset: clean\|inks\|tone\|color, strength?, count?, source?, prompt?}` | `{jobs, seeds, source, strength}`: img2img from the drawing at its own shape; results are versions with `refine`, `source` |
+| PUT / DELETE | /api/stories/{slug}/panels/{pid}/drawing/{lid} | `{png: dataURL}` | `{ok}`: one drawing layer's pixels (studio/drawing.py) |
+| POST | /api/stories/{slug}/panels/{pid}/drawing/merge | | `{file}`: visible layers baked into a new version (in use); the layers are cleared |
+| POST | /api/stories/{slug}/pages/scan | multipart `file` | `{scan, size, panels: [{box, unclear}]}`: page kept in `scans/`, panels found (studio/pagescan.py), nothing created |
+| POST | /api/stories/{slug}/pages/scan/apply | `{scan, boxes: [[x,y,w,h]...], stage?, title?}` | `{page, panels}`: one panel per box (its crop is version 1) and a new page placing them as drawn |
 | POST | /api/stories/{slug}/panels/{pid}/subject | `{point?: [x, y], clear?: bool}` | `{subject, method, area}`: cut-out mask of the picked version for `subject: pop \| cutout` (Apple Vision finds the figure; `point` picks one) |
 | POST | /api/stories/{slug}/pages/auto | `{per_page?: 4}` | `{pages}` |
 | PUT | /api/stories/{slug}/cast/{cid} | cast entry | `{ok}` |
@@ -251,10 +261,10 @@ regenerate up to 3 times, then are `flagged` for a manual fix in Studio.
 
 stdio server built on mcp 2.3's `MCPServer` (FastMCP no longer exists there) that proxies to the HTTP
 API at `STUDIO_URL` (default http://127.0.0.1:7860). The workflow and consistency rules ship in the
-server instructions. 27 tools: `list_projects`, `get_project`, `create_project`, `update_story`,
+server instructions. 28 tools: `list_projects`, `get_project`, `create_project`, `update_story`,
 `update_panel`, `add_panel`, `set_cast`, `prompt_preview`, `generate` (waits by default),
 `copilot`, `segment`, `edit_image` (same op JSON as `/edit`; waits for fix/extend candidates), `view_image` (returns the picture, max 1024 px JPEG, so the agent can look), `jobs`,
-`get_feedback`, `resolve_note`, `pick_version`, `auto_letter`, `set_pages`, `cut_out_character`, `auto_layout`, `export`, `pipeline_new`,
+`get_feedback`, `resolve_note`, `pick_version`, `auto_letter`, `set_pages`, `cut_out_character`, `refine_sketch`, `auto_layout`, `export`, `pipeline_new`,
 `pipeline_status`, `pipeline_run`, `pipeline_task`, `pipeline_submit`. When the backend isn't
 running, tools fail with a message telling the agent to open the app or run `uv run studio serve`.
 
