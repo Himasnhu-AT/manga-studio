@@ -451,6 +451,7 @@ async def events():
 
 # ---- v0.2: projects + editing ----------------------------------------------
 
+STAGES = ("name", "pencils", "inks", "blacks", "tone", "finish", "letters")  # traditional production order
 PANEL_KEYS = {
     "title", "action", "refs", "use", "cast", "bubbles", "sfx", "layers", "crop", "protect",
     "seed", "strength", "strip", "width", "height", "ref_label", "avoid", "steps", "output_resolution",
@@ -814,6 +815,100 @@ async def import_art(slug: str, pid: str, file: UploadFile = File(...)):
         raise HTTPException(400, f"images only ({', '.join(sorted(ART_EXT))})")
     img = _read_art(await file.read())
     return {"file": save_art_version(s, pid, img, {"imported": name})}
+
+
+# ---- scanned pages: a whole hand-drawn page in, panels and a page layout out -----------
+
+
+@app.post("/api/stories/{slug}/pages/scan")
+async def scan_page(slug: str, file: UploadFile = File(...)):
+    """Keep a scanned / exported page in scans/ and find its panels. Nothing is created yet: the artist
+    reviews the boxes, then POST .../pages/scan/apply."""
+    from studio import pagescan
+
+    s = _story(slug)
+    name = Path(file.filename or "page.png").name
+    if Path(name).suffix.lower() not in ART_EXT:
+        raise HTTPException(400, f"images only ({', '.join(sorted(ART_EXT))})")
+    img = _read_art(await file.read())
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "-", Path(name).stem).strip("-")[:60] or "page"
+    dest = s.dir / "scans" / f"{stem}.png"
+    n = 2
+    while dest.exists():
+        dest = s.dir / "scans" / f"{stem}-{n}.png"
+        n += 1
+    dest.parent.mkdir(exist_ok=True)
+    img.save(dest)
+    rtl = s.format.get("direction", "rtl") == "rtl"
+    return {"scan": f"scans/{dest.name}", "size": list(img.size), "panels": pagescan.detect_panels(img, rtl)}
+
+
+class ScanApplyReq(BaseModel):
+    scan: str  # scans/<name>.png from /pages/scan
+    boxes: list[list[float]]  # [x, y, w, h] fractions of the scan, in reading order
+    stage: str | None = None  # e.g. pencils, inks, finish
+    title: str | None = None
+
+
+@app.post("/api/stories/{slug}/pages/scan/apply")
+def apply_scan(slug: str, req: ScanApplyReq):
+    """One panel per box (its crop of the scan is version 1, in use) and a new page that places them where
+    they were drawn. Boxes past the margins become bleed slots."""
+    from PIL import Image
+
+    s = _story(slug)
+    src = (s.dir / req.scan).resolve()
+    if not src.is_relative_to((s.dir / "scans").resolve()) or not src.is_file():
+        raise HTTPException(400, "unknown scan; upload it with /pages/scan first")
+    if not req.boxes or len(req.boxes) > 20:
+        raise HTTPException(400, "send 1 to 20 boxes")
+    if any(len(b) != 4 or b[2] <= 0.01 or b[3] <= 0.01 for b in req.boxes):
+        raise HTTPException(400, "each box is [x, y, w, h] fractions with some size")
+    if req.stage is not None and req.stage not in STAGES:
+        raise HTTPException(400, f"stage is one of {', '.join(STAGES)}")
+    scan = Image.open(src).convert("RGB")
+    W, H = scan.size
+    f = s.format
+    pw, ph = f["page"]["width"], f["page"]["height"]
+    mx = float(f.get("margin", 0.06))
+    my = mx * pw / ph
+    label = req.title or src.stem.replace("-", " ")
+    with _edit(slug) as data:
+        panels = data.get("panels")
+        if panels is None:
+            data["panels"] = panels = pj.from_plain([])
+        pages = data.get("pages")
+        if pages is None:
+            data["pages"] = pages = pj.from_plain([])
+        made, slots = [], []
+        for k, (x, y, w, h) in enumerate(req.boxes, 1):
+            pid = _next_pid(data)
+            entry = {"id": pid, "title": f"{label} {k}", "refs": [], "use": [], "action": ""}
+            if req.stage:
+                entry["stage"] = req.stage
+            panels.append(pj.from_plain(entry))
+            made.append(pid)
+            # scan fractions -> live-area fractions; anything past the margin bleeds off the page
+            lx0, ly0 = (x - mx) / (1 - 2 * mx), (y - my) / (1 - 2 * my)
+            lx1, ly1 = (x + w - mx) / (1 - 2 * mx), (y + h - my) / (1 - 2 * my)
+            bleed = lx0 < -0.01 or ly0 < -0.01 or lx1 > 1.01 or ly1 > 1.01
+            lx0, ly0, lx1, ly1 = max(0.0, lx0), max(0.0, ly0), min(1.0, lx1), min(1.0, ly1)
+            slot = {"panel": pid, "box": [round(lx0, 4), round(ly0, 4), round(lx1 - lx0, 4), round(ly1 - ly0, 4)]}
+            if bleed:
+                slot["bleed"] = True
+            slots.append(slot)
+        ids = {str(pg.get("id")) for pg in pages}
+        n = len(pages) + 1
+        while f"pg{n}" in ids:
+            n += 1
+        page_id = f"pg{n}"
+        pages.append(pj.from_plain({"id": page_id, "panels": slots}))
+    s = st.load(slug)
+    for pid, (x, y, w, h) in zip(made, req.boxes):
+        box = (max(0, round(x * W)), max(0, round(y * H)), min(W, round((x + w) * W)), min(H, round((y + h) * H)))
+        save_art_version(s, pid, scan.crop(box), {"imported": req.scan, "scan_box": [x, y, w, h]})
+    bump()
+    return {"page": page_id, "panels": made}
 
 
 # ---- drawing layers: the artist's own strokes ---------------------------------------

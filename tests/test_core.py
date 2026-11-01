@@ -437,3 +437,67 @@ def test_drawing_layers_render_and_merge(sample):
     assert Image.open(s.dir / "out" / pid / f).getpixel((200, 300)) == (20, 20, 20)
     assert not (s.dir / "out" / pid / "drawing" / "inks.png").exists()
     assert client.post(f"/api/stories/{sample}/panels/{pid}/drawing/merge").status_code == 400
+
+
+def _page_with_panels(rects, size=(1240, 1754)):
+    """A white page with bordered panels drawn in it (rects in px), like a scan of hand-drawn work."""
+    page = Image.new("RGB", size, "white")
+    d = ImageDraw.Draw(page)
+    for x0, y0, x1, y1 in rects:
+        d.rectangle([x0, y0, x1, y1], outline=(15, 15, 15), width=6)
+        d.line([(x0 + 40, y0 + 60), (x1 - 40, y1 - 60)], fill=(60, 110, 200), width=5)  # some blue pencil art
+    d.text((600, 1700), "12", fill=(0, 0, 0))  # a page number in the margin is not a panel
+    return page
+
+
+def test_detect_panels_on_a_scanned_page():
+    from studio import pagescan
+
+    rects = [(80, 80, 1160, 560), (640, 600, 1160, 1100), (80, 600, 600, 1100), (80, 1140, 1160, 1670)]
+    found = pagescan.detect_panels(_page_with_panels(rects), rtl=True)
+    assert len(found) == 4
+    W, H = 1240, 1754
+    want = [rects[0], rects[1], rects[2], rects[3]]  # reading order, right to left: top, right, left, bottom
+    for f, (x0, y0, x1, y1) in zip(found, want):
+        x, y, w, h = f["box"]
+        assert abs(x - x0 / W) < 0.01 and abs(y - y0 / H) < 0.01 and abs(w - (x1 - x0) / W) < 0.015 and abs(h - (y1 - y0) / H) < 0.015
+        assert f["unclear"] is False
+    ltr = pagescan.detect_panels(_page_with_panels(rects), rtl=False)
+    assert ltr[1]["box"][0] < ltr[2]["box"][0]  # left panel first when reading left to right
+
+
+def test_scan_import_creates_panels_and_a_page(sample):
+    rects = [(80, 80, 1160, 560), (640, 600, 1160, 1100), (80, 600, 600, 1100), (0, 1140, 1240, 1754)]
+    buf = io.BytesIO()
+    _page_with_panels(rects).save(buf, "PNG")
+    r = client.post(f"/api/stories/{sample}/pages/scan", files={"file": ("ch1 page 03.png", buf.getvalue(), "image/png")})
+    assert r.status_code == 200, r.text
+    scan = r.json()
+    assert scan["scan"] == "scans/ch1-page-03.png" and len(scan["panels"]) >= 3
+    boxes = [[r_[0] / 1240, r_[1] / 1754, (r_[2] - r_[0]) / 1240, (r_[3] - r_[1]) / 1754] for r_ in rects]
+    r = client.post(f"/api/stories/{sample}/pages/scan/apply", json={"scan": scan["scan"], "boxes": boxes, "stage": "pencils"})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    s = st.load(sample)
+    page = next(pg for pg in s.data["pages"] if pg["id"] == out["page"])
+    assert [sl["panel"] for sl in page["panels"]] == out["panels"]
+    assert page["panels"][3].get("bleed") is True and not page["panels"][0].get("bleed")
+    p = s.panel(out["panels"][1])
+    assert p["stage"] == "pencils"
+    v = st.picked_version(s, p["id"])
+    assert Image.open(s.dir / "out" / p["id"] / v).size == (520, 500)
+    assert client.post(f"/api/stories/{sample}/pages/scan/apply", json={"scan": "../story.yaml", "boxes": boxes}).status_code == 400
+    assert client.post(f"/api/stories/{sample}/pages/scan/apply", json={"scan": scan["scan"], "boxes": boxes, "stage": "done"}).status_code == 400
+
+
+def test_detect_panels_without_opencv(monkeypatch):
+    """The pure-numpy path finds the same panels when OpenCV isn't installed."""
+    import sys
+
+    from studio import pagescan
+
+    monkeypatch.setitem(sys.modules, "cv2", None)  # import cv2 -> ImportError
+    monkeypatch.setattr(pagescan, "WORK_SIDE", 300)  # keep the BFS quick
+    rects = [(80, 80, 1160, 560), (80, 600, 1160, 1670)]
+    found = pagescan.detect_panels(_page_with_panels(rects), rtl=True)
+    assert len(found) == 2 and abs(found[1]["box"][1] - 600 / 1754) < 0.02
