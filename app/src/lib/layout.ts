@@ -301,11 +301,12 @@ export const polyClip = (poly?: Vec2[]) => (poly?.length ? `polygon(${poly.map((
  * panel's crop (focal x/y in 0..1 and zoom >= 1). Lettering lives in the same frame, so bubbles stay
  * glued to the art when a slot crops it.
  */
-export function artFrame(imgAspect: number, slotAspect: number, crop?: { x: number; y: number; scale: number }) {
+export function artFrame(imgAspect: number, slotAspect: number, crop?: { x: number; y: number; scale: number }, fit: "cover" | "contain" = "cover") {
   const s = Math.max(1, crop?.scale ?? 1);
   let w = 100 * s;
   let h = 100 * s;
-  if (imgAspect > slotAspect) w = (imgAspect / slotAspect) * 100 * s;
+  // cover fills the slot (and crops); contain shows the whole art (a cut-out character floats inside the slot)
+  if (imgAspect > slotAspect === (fit === "cover")) w = (imgAspect / slotAspect) * 100 * s;
   else h = (slotAspect / imgAspect) * 100 * s;
   const fx = crop?.x ?? 0.5;
   const fy = crop?.y ?? 0.5;

@@ -91,6 +91,7 @@ BORDERS = {"normal": 1.0, "bold": 2.2, "thin": 0.5, "none": 0.0}
 SUBJECTS = ("pop", "cutout")
 PAPERS = {"white": (255, 255, 255), "black": (12, 12, 14)}
 BLEED_EPS = 0.004  # a box edge this close to the live edge counts as touching it
+POP_REACH = 0.2  # a popped-out character leaves its frame by at most this much of the slot size
 
 
 def subject_rel(story: Story, pid: str) -> str | None:
@@ -151,11 +152,11 @@ def _lettering_layer(panel: dict, size: tuple[int, int]) -> Image.Image | None:
     return img
 
 
-def _paste_framed(canvas: Image.Image, layer: Image.Image, panel: dict, slot_rect, clip: Image.Image | None, alpha: Image.Image | None = None) -> None:
+def _paste_framed(canvas: Image.Image, layer: Image.Image, panel: dict, slot_rect, clip: Image.Image | None, alpha: Image.Image | None = None, fit: str = "cover") -> None:
     """Scale `layer` (art-sized) into the slot's art frame and paste it. `clip` is an L mask the size of the
     canvas (None = no clipping), `alpha` an extra L mask at art size (the cut-out character)."""
     x, y, w, h = slot_rect
-    left, top, fw, fh = slot_frame_px(panel, layer.size, w, h)
+    left, top, fw, fh = slot_frame_px(panel, layer.size, w, h, fit)
     size = (max(1, round(fw)), max(1, round(fh)))
     big = layer.convert("RGBA").resize(size, Image.LANCZOS)
     a = big.getchannel("A")
@@ -193,13 +194,13 @@ def _page_background(story: Story, page: dict, canvas: Image.Image) -> None:
     canvas.paste(Image.blend(canvas, layer, max(0.0, min(1.0, float(bg.get("opacity", 0.35))))))
 
 
-def art_frame(img_aspect: float, slot_aspect: float, crop: dict | None = None) -> tuple[float, float, float, float]:
+def art_frame(img_aspect: float, slot_aspect: float, crop: dict | None = None, fit: str = "cover") -> tuple[float, float, float, float]:
     """Where the panel sits inside its slot, as (left, top, width, height) percentages of the slot.
-    Port of app/src/lib/layout.ts `artFrame`: cover fit, zoom by crop.scale (>= 1), then the focal
-    point works like CSS object-position (0 = left/top edge, 1 = right/bottom edge)."""
+    Port of app/src/lib/layout.ts `artFrame`: cover fit (or contain, for a cut-out character), zoom by
+    crop.scale (>= 1), then the focal point works like CSS object-position (0 = left/top, 1 = right/bottom)."""
     s = max(1.0, float((crop or {}).get("scale", 1) or 1))
     w = h = 100.0 * s
-    if img_aspect > slot_aspect:
+    if (img_aspect > slot_aspect) == (fit == "cover"):
         w = (img_aspect / slot_aspect) * 100 * s
     else:
         h = (slot_aspect / img_aspect) * 100 * s
@@ -222,10 +223,11 @@ def auto_crop(panel: dict, img_aspect: float, slot_aspect: float) -> dict | None
     return {"x": 0.5, "y": min(y, 0.5), "scale": 1}
 
 
-def slot_frame_px(panel: dict, img_size: tuple[int, int], w: int, h: int) -> tuple[float, float, float, float]:
+def slot_frame_px(panel: dict, img_size: tuple[int, int], w: int, h: int, fit: str = "cover") -> tuple[float, float, float, float]:
     """The panel's frame inside a w x h slot in pixels (left, top, width, height); it may overflow the slot."""
     ia, sa = img_size[0] / img_size[1], w / h
-    left, top, fw, fh = art_frame(ia, sa, auto_crop(panel, ia, sa))
+    crop = panel.get("crop") if fit == "contain" else auto_crop(panel, ia, sa)
+    left, top, fw, fh = art_frame(ia, sa, crop, fit)
     return left * w / 100, top * h / 100, fw * w / 100, fh * h / 100
 
 
@@ -276,12 +278,18 @@ def render_page(story: Story, page: dict, geo: dict) -> Image.Image:
                 d.line(poly + [poly[0]], fill=INK, width=line, joint="curve")
             else:
                 d.rectangle([x, y, x + w - 1, y + h - 1], outline=INK, width=line)
+        fit = "contain" if mode == "cutout" else "cover"
         if mode:
-            _paste_framed(canvas, art, panel, (x, y, w, h), None, alpha)
+            reach = None
+            if mode == "pop":
+                dx, dy = int(w * POP_REACH), int(h * POP_REACH)
+                reach = Image.new("L", canvas.size, 0)
+                reach.paste(255, (x - dx, y - dy, x + w + dx, y + h + dy))
+            _paste_framed(canvas, art, panel, (x, y, w, h), reach, alpha, fit)
         if panel is not None:
             lt = _lettering_layer(panel, art.size) if art is not None else None
             if lt is not None:
-                _paste_framed(canvas, lt, panel, (x, y, w, h), clip if mode != "cutout" else None)
+                _paste_framed(canvas, lt, panel, (x, y, w, h), clip if mode != "cutout" else None, fit=fit)
     return canvas
 
 
@@ -391,7 +399,7 @@ def page_svg(story: Story, page: dict, geo: dict) -> str:
         frame = None
         if art is not None:
             pw, ph = art.size
-            fl, ft, fw, fh = slot_frame_px(panel, art.size, w, h)
+            fl, ft, fw, fh = slot_frame_px(panel, art.size, w, h, "contain" if mode == "cutout" else "cover")
             frame = f'x="{x + fl:.2f}" y="{y + ft:.2f}" width="{fw:.2f}" height="{fh:.2f}" viewBox="0 0 {pw} {ph}" preserveAspectRatio="none"'
         if frame and mode != "cutout":
             body.append(f'<g clip-path="url(#{cid})" data-panel="{escape(pid)}"><svg {frame}><g class="art"><image width="{pw}" height="{ph}" href="{_data_uri(art)}"/></g></svg></g>')
@@ -402,7 +410,12 @@ def page_svg(story: Story, page: dict, geo: dict) -> str:
             mid = f"subject-{page['id']}-{k}"
             m = Image.merge("RGB", (alpha, alpha, alpha))  # luminance mask: white = the character
             defs.append(f'<mask id="{mid}" maskUnits="userSpaceOnUse" x="0" y="0" width="{pw}" height="{ph}"><image width="{pw}" height="{ph}" href="{_data_uri(m)}"/></mask>')
-            body.append(f'<svg {frame} class="subject {mode}" data-panel="{escape(pid)}"><image width="{pw}" height="{ph}" mask="url(#{mid})" href="{_data_uri(art)}"/></svg>')
+            reach = ""
+            if mode == "pop":
+                rid, dx, dy = f"reach-{page['id']}-{k}", w * POP_REACH, h * POP_REACH
+                defs.append(f'<clipPath id="{rid}"><rect x="{x - dx:.1f}" y="{y - dy:.1f}" width="{w + 2 * dx:.1f}" height="{h + 2 * dy:.1f}"/></clipPath>')
+                reach = f' clip-path="url(#{rid})"'
+            body.append(f'<g{reach}><svg {frame} class="subject {mode}" data-panel="{escape(pid)}"><image width="{pw}" height="{ph}" mask="url(#{mid})" href="{_data_uri(art)}"/></svg></g>')
         if frame:
             clip_attr = f' clip-path="url(#{cid})"' if mode != "cutout" else ""
             body.append(f'<g{clip_attr}><svg {frame}><g class="lettering">{lettering_svg(panel, pw, ph)}</g></svg></g>')

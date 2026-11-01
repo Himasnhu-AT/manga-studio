@@ -421,7 +421,8 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
   const cutOut = async (e: React.PointerEvent, i: number, p: Panel, slotAspect: number) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const { W, H } = panelSize(p, story);
-    const f = artFrame(W / H, slotAspect, autoCrop(p, W / H, slotAspect));
+    const cutout = page.panels[i].subject === "cutout" && !!p.subject;
+    const f = cutout ? artFrame(W / H, slotAspect, p.crop, "contain") : artFrame(W / H, slotAspect, autoCrop(p, W / H, slotAspect));
     const sx = ((e.clientX - r.left) / r.width) * 100;
     const sy = ((e.clientY - r.top) / r.height) * 100;
     const point: Vec2 = [Math.min(1, Math.max(0, (sx - f.left) / f.width)), Math.min(1, Math.max(0, (sy - f.top) / f.height))];

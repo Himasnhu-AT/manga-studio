@@ -19,6 +19,8 @@ export interface LayerToggles {
   fx: boolean;
   lettering: boolean;
 }
+/** How far a popped-out character may leave its frame, as a fraction of the slot (export.POP_REACH). */
+export const POP_REACH = 0.2;
 export const ALL_LAYERS: LayerToggles = { background: true, art: true, fx: true, lettering: true };
 
 export interface PanelViewProps {
@@ -64,7 +66,12 @@ export const PanelView = memo(function PanelView({
 }: PanelViewProps) {
   const { W, H } = panelSize(panel, story);
   const imgAspect = W / H;
-  const frame = slotAspect ? artFrame(imgAspect, slotAspect, autoCrop({ ...panel, bubbles: bubbles ?? panel.bubbles, sfx: sfx ?? panel.sfx }, imgAspect, slotAspect)) : { left: 0, top: 0, width: 100, height: 100 };
+  const contain = subjectMode === "cutout" && !!panel.subject;
+  const frame = slotAspect
+    ? contain
+      ? artFrame(imgAspect, slotAspect, panel.crop, "contain")
+      : artFrame(imgAspect, slotAspect, autoCrop({ ...panel, bubbles: bubbles ?? panel.bubbles, sfx: sfx ?? panel.sfx }, imgAspect, slotAspect))
+    : { left: 0, top: 0, width: 100, height: 100 };
   const pl = panel.layers ?? {};
   const show = {
     background: layers.background && pl.background?.visible !== false,
@@ -111,8 +118,11 @@ export const PanelView = memo(function PanelView({
         </div>
       )}
       {show.art && (
-        <div className="pointer-events-none absolute" style={{ ...frameStyle, ...masked }}>
-          <img src={src!} alt="" draggable={false} className="absolute inset-0 size-full object-fill" />
+        // a pop-out reaches at most POP_REACH past the frame: a head or an arm, not the whole hidden picture
+        <div className="pointer-events-none absolute inset-0" style={pop ? { clipPath: `inset(-${POP_REACH * 100}%)` } : undefined}>
+          <div className="absolute" style={{ ...frameStyle, ...masked }}>
+            <img src={src!} alt="" draggable={false} className="absolute inset-0 size-full object-fill" />
+          </div>
         </div>
       )}
       <div className={cx("absolute inset-0", pop && "overflow-hidden")} style={pop ? { clipPath: polyClip(poly) } : undefined}>
