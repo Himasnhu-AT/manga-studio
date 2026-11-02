@@ -399,7 +399,7 @@ def test_refine_sketch_keeps_the_drawing_shape(sample):
     assert job["status"] == "done", job
     plan = job["plan"]
     assert plan["refs"][0]["version"] == f and "artist's own drawing" in plan["refs"][0]["label"]
-    assert "screentone" in plan["prompt"] and plan["width"] % 16 == 0 and abs(plan["width"] / plan["height"] - 2) < 0.05
+    assert "screentone" in plan["prompt"] and plan["width"] % 32 == 0 and plan["height"] % 32 == 0 and abs(plan["width"] / plan["height"] - 2) < 0.05
     assert plan["width"] * plan["height"] < 1.2 * 864 * 1152
     meta = json.loads((st.STORIES / sample / "out" / "p05" / job["file"]).with_suffix(".json").read_text())
     assert meta["refine"] == "tone" and meta["source"] == f

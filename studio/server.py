@@ -976,7 +976,8 @@ REFINE_PRESETS = {
 
 
 def _render_size(src_path: Path, s: st.Story) -> tuple[int, int]:
-    """The drawing's shape at the story's usual pixel count, in multiples of 16 (a 3000 px scan would not fit in memory)."""
+    """The drawing's shape at the story's usual pixel count, in multiples of 32 as Qwen-Image requires (a 3000 px
+    scan would not fit in memory)."""
     from PIL import Image
 
     d = s.settings()
@@ -984,7 +985,7 @@ def _render_size(src_path: Path, s: st.Story) -> tuple[int, int]:
     with Image.open(src_path) as im:
         aspect = im.width / im.height
     w = (area * aspect) ** 0.5
-    return max(256, round(w / 16) * 16), max(256, round(w / aspect / 16) * 16)
+    return max(256, round(w / 32) * 32), max(256, round(w / aspect / 32) * 32)
 
 
 class RefineReq(BaseModel):
@@ -1090,7 +1091,7 @@ def queue_from_source(slug: str, pid: str, src: str, mode: str, prompt: str | No
 
         with Image.open(src_path) as im:
             f = max(1.0, 256 / min(im.size))  # tiny sources render at >= 256px, same aspect
-            size = (round(im.width * f / 16) * 16, round(im.height * f / 16) * 16)
+            size = (round(im.width * f / 32) * 32, round(im.height * f / 32) * 32)  # Qwen-Image needs multiples of 32
 
     def mutate(plan):
         first = {"name": f"{pid}/{src}", "path": str(src_path), "version": src, "label": source_label or "the current panel, keep its composition and characters"}
