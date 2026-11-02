@@ -48,6 +48,9 @@ const DEFAULT_LAYERS: DrawLayer[] = [
   { id: "inks", name: "Inks" },
 ];
 const UNDO_LIMIT = 15;
+// Every stroke snapshots its layer for undo (getImageData), so keep the canvases in CPU memory: faster
+// read-back, and a GPU canvas can stall screen capture and recording.
+const CTX: CanvasRenderingContext2DSettings = { willReadFrequently: true };
 
 export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel }) {
   const close = () => useStudio.getState().setDraw(false);
@@ -123,7 +126,7 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
     if (v === undefined) return;
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => el.getContext("2d")!.drawImage(img, 0, 0, W, H);
+    img.onload = () => el.getContext("2d", CTX)!.drawImage(img, 0, 0, W, H);
     img.src = layerUrl(story.slug, panel.id, id, v);
   };
 
@@ -161,7 +164,7 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
     }
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    const ctx = c.getContext("2d")!;
+    const ctx = c.getContext("2d", CTX)!;
     undo.current.push({ id: active, data: ctx.getImageData(0, 0, W, H) });
     if (undo.current.length > UNDO_LIMIT) undo.current.shift();
     redo.current = [];
@@ -231,7 +234,7 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
     if (!item) return;
     const c = canvases.current.get(item.id);
     if (!c) return;
-    const ctx = c.getContext("2d")!;
+    const ctx = c.getContext("2d", CTX)!;
     to.current.push({ id: item.id, data: ctx.getImageData(0, 0, W, H) });
     ctx.putImageData(item.data, 0, 0);
     bumpHistory((n) => n + 1);
@@ -296,7 +299,7 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
     await flush();
     const r = await attempt(() => Api.mergeDrawing(story.slug, panel.id), "Merged your drawing into a new version");
     if (!r) return;
-    for (const c of canvases.current.values()) c.getContext("2d")!.clearRect(0, 0, W, H);
+    for (const c of canvases.current.values()) c.getContext("2d", CTX)!.clearRect(0, 0, W, H);
     undo.current = [];
     redo.current = [];
     bumpHistory((n) => n + 1);
