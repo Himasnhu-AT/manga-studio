@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlowArrow, Plus, WarningCircle } from "@phosphor-icons/react";
+import { FlowArrow, Plus, UploadSimple, WarningCircle } from "@phosphor-icons/react";
 import { Api, type Page, type StoryDetail } from "../../lib/api";
 import { useLive } from "../../lib/live";
 import { applyTemplate, pageDims, storyPages, stripPanels, type TemplateId } from "../../lib/layout";
@@ -14,7 +14,8 @@ import { CastStudio } from "./CastStudio";
 import { ImageEditor } from "./ImageEditor";
 import { Refine } from "./Refine";
 import { DrawEditor } from "./DrawEditor";
-import { ScanReview } from "./ScanReview";
+import { ScanReview, startScan } from "./ScanReview";
+import { ART_ACCEPT } from "./importArt";
 import { StoryEditor } from "./StoryEditor";
 import { Inspector } from "./Inspector";
 import { Rail } from "./Rail";
@@ -226,25 +227,53 @@ function StudioBody({ story }: { story: StoryDetail }) {
 
   if (!story.panels.length)
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="relative flex h-full items-center justify-center">
         <Empty
-          icon={<Plus size={20} />}
-          title="No panels yet"
-          body="Add a panel and describe it, or paste your story into the pipeline and let it draft the pages."
+          icon={<UploadSimple size={20} />}
+          title="Start from your drawings"
+          body="Bring in a page you drew or scanned: its panels are found for you, and each keeps your art. Or add a panel and work one at a time."
           action={
-            <div className="flex gap-2">
-              <Button variant="primary" icon={<Plus size={14} />} onClick={async () => {
+            <div className="flex flex-wrap justify-center gap-2">
+              <label className="pressable inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[var(--radius-control)] bg-ink px-3.5 text-[13px] font-medium text-paper">
+                <UploadSimple size={14} />
+                Import a drawn page
+                <input
+                  type="file"
+                  accept={ART_ACCEPT}
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void startScan(story.slug, f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <Button icon={<Plus size={14} />} onClick={async () => {
                 const r = await attempt(() => Api.addPanel(story.slug, { title: "Opening" }));
                 if (r) selectPanel(r.id);
               }}>
                 Add panel
               </Button>
               <Button icon={<FlowArrow size={14} />} onClick={() => go("pipeline")}>
-                Open pipeline
+                From a script
               </Button>
             </div>
           }
         />
+        <AnimatePresence>
+          {scan && (
+            <motion.div key="scan" className="absolute inset-0 z-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+              <ScanReview
+                story={story}
+                draft={scan}
+                onCreated={(pageId, panels) => {
+                  setGoPage(pageId);
+                  if (panels[0]) selectPanel(panels[0]);
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
 
