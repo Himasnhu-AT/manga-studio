@@ -967,6 +967,11 @@ def merge_drawing(slug: str, pid: str):
 # ---- refine sketch: your drawing in, a cleaner stage out ------------------------------
 
 KEEP = "Keep every pose, proportion, expression, panel composition and line placement exactly as drawn."
+# Past this strength the drawing is a layout guide, not line work to trace: a quick rough plus a few words
+# becomes a properly drawn panel in the same pose and composition (the slider says "May redraw the pose").
+GUIDE_FROM = 0.75
+GUIDE = ("Use the drawing as a rough layout guide only: keep its pose, composition, framing and where everything is, "
+         "but redraw it properly with correct anatomy, full detail in faces, hair, hands and clothes, and clean professional line work.")
 REFINE_PRESETS = {
     "clean": {"strength": 0.45, "label": "Clean lines", "prompt": f"Clean up this rough pencil sketch into crisp, clean black line art on white paper. Remove construction lines and blue pencil. {KEEP} No color, no shading, no screentone."},
     "inks": {"strength": 0.55, "label": "Inks", "prompt": f"Ink this sketch as finished manga line art: confident black pen lines with varied line weight, solid black fills for dark hair and deep shadows, white paper. {KEEP} No color, no screentone."},
@@ -1006,12 +1011,14 @@ def refine_sketch(slug: str, pid: str, req: RefineReq):
     src, path = _version_path(s, pid, req.source)
     pr = REFINE_PRESETS[req.preset]
     strength = max(0.2, min(1.0, req.strength if req.strength is not None else pr["strength"]))
-    prompt = pr["prompt"] + (f" {req.prompt.strip()}" if req.prompt and req.prompt.strip() else "")
+    loose = strength >= GUIDE_FROM
+    prompt = pr["prompt"].replace(KEEP, GUIDE) if loose else pr["prompt"]
+    prompt += f" {req.prompt.strip()}" if req.prompt and req.prompt.strip() else ""
     try:
         created, seeds = queue_from_source(
             slug, pid, src, "img2img", prompt, strength, max(1, min(4, req.count)),
             meta={"refine": req.preset}, size=_render_size(path, s),
-            source_label="the artist's own drawing of this panel: follow it exactly",
+            source_label="the artist's rough drawing of this panel: follow its layout and pose" if loose else "the artist's own drawing of this panel: follow it exactly",
         )
     except st.StoryError as e:
         raise HTTPException(400, str(e))

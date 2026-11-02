@@ -404,6 +404,11 @@ def test_refine_sketch_keeps_the_drawing_shape(sample):
     meta = json.loads((st.STORIES / sample / "out" / "p05" / job["file"]).with_suffix(".json").read_text())
     assert meta["refine"] == "tone" and meta["source"] == f
     assert client.post(f"/api/stories/{sample}/panels/p05/refine", json={"preset": "sparkles"}).status_code == 400
+    # high strength: the drawing becomes a layout guide that the prompt fills in
+    r = client.post(f"/api/stories/{sample}/panels/p05/refine", json={"preset": "inks", "strength": 0.9, "count": 1, "source": f, "prompt": "a girl holding a candy"})
+    plan = wait_jobs(r.json()["jobs"])[0]["plan"]
+    assert "rough layout guide" in plan["prompt"] and "exactly as drawn" not in plan["prompt"] and "a girl holding a candy" in plan["prompt"]
+    assert "follow its layout" in plan["refs"][0]["label"]
 
 
 def test_drawing_layers_render_and_merge(sample):

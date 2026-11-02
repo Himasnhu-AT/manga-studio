@@ -74,8 +74,9 @@ export function Refine({ story, panel }: { story: StoryDetail; panel: Panel }) {
     setBusy(false);
   };
 
-  const hint = strength <= 0.45 ? "Pose and layout locked" : strength <= 0.7 ? "Small shifts possible" : "May redraw the pose";
-  const hintTone = strength <= 0.45 ? "text-ok" : strength <= 0.7 ? "text-warn" : "text-err";
+  // matches the backend: from 0.75 the drawing is a layout guide the prompt fills in
+  const hint = strength <= 0.45 ? "Pose and layout locked" : strength < 0.75 ? "Small shifts possible" : "Your layout, drawn properly";
+  const hintTone = strength <= 0.45 ? "text-ok" : strength < 0.75 ? "text-warn" : "text-accent-ink";
 
   return (
     <div className="absolute inset-0 flex flex-col bg-canvas">
