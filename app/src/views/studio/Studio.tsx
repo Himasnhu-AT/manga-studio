@@ -225,7 +225,8 @@ function StudioBody({ story }: { story: StoryDetail }) {
     onPagesChange(pages.map((p, i) => (i === pageIdx ? applyTemplate(page, t, story.format, unplaced) : p)));
   };
 
-  if (!story.panels.length)
+  // no story panels yet (reference sheets don't count): start from a drawn page, a panel, or a script
+  if (!stripPanels(story).length)
     return (
       <div className="relative flex h-full items-center justify-center">
         <Empty
