@@ -1012,6 +1012,8 @@ def refine_sketch(slug: str, pid: str, req: RefineReq):
     pr = REFINE_PRESETS[req.preset]
     strength = max(0.2, min(1.0, req.strength if req.strength is not None else pr["strength"]))
     loose = strength >= GUIDE_FROM
+    if loose:
+        strength = 1.0  # the model edits its source below 1.0; drawing *from* the layout needs a fresh render
     prompt = pr["prompt"].replace(KEEP, GUIDE) if loose else pr["prompt"]
     prompt += f" {req.prompt.strip()}" if req.prompt and req.prompt.strip() else ""
     try:

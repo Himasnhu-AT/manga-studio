@@ -408,7 +408,7 @@ def test_refine_sketch_keeps_the_drawing_shape(sample):
     r = client.post(f"/api/stories/{sample}/panels/p05/refine", json={"preset": "inks", "strength": 0.9, "count": 1, "source": f, "prompt": "a girl holding a candy"})
     plan = wait_jobs(r.json()["jobs"])[0]["plan"]
     assert "rough layout guide" in plan["prompt"] and "exactly as drawn" not in plan["prompt"] and "a girl holding a candy" in plan["prompt"]
-    assert "follow its layout" in plan["refs"][0]["label"]
+    assert "follow its layout" in plan["refs"][0]["label"] and plan["strength"] == 1.0
 
 
 def test_drawing_layers_render_and_merge(sample):
