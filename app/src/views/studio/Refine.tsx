@@ -32,6 +32,7 @@ export function Refine({ story, panel }: { story: StoryDetail; panel: Panel }) {
   const [preset, setPreset] = useState<Preset>("inks");
   const [strength, setStrength] = useState(0.55);
   const [count, setCount] = useState(3);
+  const [prompt, setPrompt] = useState("");
   const [overlay, setOverlay] = useState(false);
   const [jobIds, setJobIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
@@ -65,7 +66,7 @@ export function Refine({ story, panel }: { story: StoryDetail; panel: Panel }) {
 
   const run = async () => {
     setBusy(true);
-    const r = await attempt(() => Api.refine(story.slug, panel.id, { preset, strength, count, source }), `Refining ${panel.id}: ${count} result${count > 1 ? "s" : ""}`);
+    const r = await attempt(() => Api.refine(story.slug, panel.id, { preset, strength, count, source, prompt: prompt.trim() || undefined }), `Refining ${panel.id}: ${count} result${count > 1 ? "s" : ""}`);
     if (r) {
       setJobIds((ids) => [...ids, ...r.jobs]);
       setShown(null);
@@ -131,6 +132,19 @@ export function Refine({ story, panel }: { story: StoryDetail; panel: Panel }) {
               setStrength(PRESETS.find((p) => p.value === v)!.strength);
             }}
             options={PRESETS.map((p) => ({ value: p.value, label: p.label, title: p.title }))}
+          />
+        </div>
+        <div className="flex w-80 flex-col gap-1.5">
+          <label htmlFor="refine-prompt" className="type-label">
+            Describe it
+          </label>
+          <input
+            id="refine-prompt"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !busy && void run()}
+            placeholder="Who is in it, what they do. Optional."
+            className="h-9 rounded-[var(--radius-control)] border border-line-2 bg-paper px-2.5 text-[13px]"
           />
         </div>
         <div className="flex w-72 flex-col gap-1.5">
