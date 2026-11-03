@@ -150,11 +150,35 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
     const r = sheet.current!.getBoundingClientRect();
     return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
   };
-  const pressureOf = (e: PointerEvent | React.PointerEvent) => (e.pointerType === "pen" ? Math.max(0.02, e.pressure) : 0.7);
+  // Pen pressure. Chrome reports a tablet as pointerType "pen"; the macOS web view (WKWebView) may report it as
+  // a "mouse" that still carries real pressure. A plain mouse only ever says 0.5 while pressed, so any other value
+  // means a pressure-sensitive pen.
+  const pressureSeen = useRef(false);
+  const [pressureLive, setPressureLive] = useState<number | null>(null);
+  const pressureOf = (e: PointerEvent | React.PointerEvent) => {
+    const p = e.pressure;
+    if (e.pointerType === "pen" || (p > 0 && p !== 0.5)) pressureSeen.current = true;
+    return pressureSeen.current ? Math.max(0.02, p || 0.02) : 0.7;
+  };
+  /** Drag with Option held: resize the brush (left/right), like Clip Studio and Photoshop. */
+  const sizeDrag = useRef<{ x: number; size: number } | null>(null);
+  /** Option is held (tracked from the key too: a tablet express key sends it as a key press). */
+  const altHeld = useRef(false);
+  /** The stroke erases: Eraser tool, the pen's eraser end, or a barrel button held while drawing. */
+  const erasing = useRef(false);
 
   const onDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    if (spaceHeld.current) return pan(e);
+    // middle button (or Space + pen) pans; right/barrel button and the eraser end erase; Option + drag resizes
+    if (e.button === 1 || (e.button === 0 && spaceHeld.current)) return pan(e);
+    if (e.button === 0 && (e.altKey || altHeld.current)) {
+      e.preventDefault();
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      sizeDrag.current = { x: e.clientX, size };
+      return;
+    }
+    const barrel = e.button === 2 || e.button === 5 || (e.buttons & 32) !== 0;
+    if (e.button !== 0 && !barrel) return;
+    erasing.current = tool === "eraser" || barrel;
     const layer = layers.find((l) => l.id === active);
     const c = canvases.current.get(active);
     if (!c || !layer) return;
@@ -171,14 +195,14 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
     bumpHistory((n) => n + 1);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.globalCompositeOperation = tool === "eraser" ? "destination-out" : "source-over";
+    ctx.globalCompositeOperation = erasing.current ? "destination-out" : "source-over";
     ctx.strokeStyle = INKS.find((i) => i.id === ink)!.color;
     ctx.globalAlpha = tool === "pencil" ? 0.85 : 1;
     const p = toCanvas(e);
     stroke.current = { ctx, x: p.x, y: p.y, sx: p.x, sy: p.y, pointer: e.pointerId };
     // a tap leaves a dot
     ctx.beginPath();
-    ctx.lineWidth = widthFor(tool, size, pressureOf(e));
+    ctx.lineWidth = widthFor(erasing.current ? "eraser" : tool, size, pressureOf(e));
     ctx.moveTo(p.x, p.y);
     ctx.lineTo(p.x + 0.01, p.y);
     ctx.stroke();
@@ -187,6 +211,11 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
   const onMove = (e: React.PointerEvent) => {
     const p = toCanvas(e);
     setHover(p);
+    if (e.pointerType === "pen" || (e.pressure > 0 && e.pressure !== 0.5)) setPressureLive(Math.round(e.pressure * 100));
+    if (sizeDrag.current) {
+      setSize(Math.min(80, Math.max(1, Math.round(sizeDrag.current.size + (e.clientX - sizeDrag.current.x) / 4))));
+      return;
+    }
     const s = stroke.current;
     if (!s || s.pointer !== e.pointerId) return;
     const events = (e.nativeEvent as PointerEvent).getCoalescedEvents?.() ?? [e.nativeEvent];
@@ -196,7 +225,7 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
       s.sx += (t.x - s.sx) * (1 - k);
       s.sy += (t.y - s.sy) * (1 - k);
       s.ctx.beginPath();
-      s.ctx.lineWidth = widthFor(tool, size, pressureOf(ev));
+      s.ctx.lineWidth = widthFor(erasing.current ? "eraser" : tool, size, pressureOf(ev));
       s.ctx.moveTo(s.x, s.y);
       s.ctx.lineTo(s.sx, s.sy);
       s.ctx.stroke();
@@ -206,7 +235,9 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
   };
 
   const onUp = () => {
+    sizeDrag.current = null;
     if (!stroke.current) return;
+    erasing.current = false;
     stroke.current.ctx.globalCompositeOperation = "source-over";
     stroke.current.ctx.globalAlpha = 1;
     stroke.current = null;
@@ -252,7 +283,27 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
         else step(undo, redo);
         return;
       }
-      if (e.metaKey || e.ctrlKey) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        step(redo, undo);
+        return;
+      }
+      // Cmd+ / Cmd- / Cmd0 zoom the sheet (tablet express keys send Cmd++ as Cmd+= or Cmd+Shift+=)
+      if (e.metaKey || e.ctrlKey) {
+        const k = e.code;
+        if (k === "Equal" || k === "NumpadAdd" || e.key === "+" || e.key === "=") {
+          e.preventDefault();
+          setZoom((z) => Math.min(6, z * 1.25));
+        } else if (k === "Minus" || k === "NumpadSubtract" || e.key === "-" || e.key === "_") {
+          e.preventDefault();
+          setZoom((z) => Math.max(1, z / 1.25));
+        } else if (k === "Digit0" || k === "Numpad0") {
+          e.preventDefault();
+          setZoom(1);
+        }
+        return;
+      }
+      if (e.key === "Alt") altHeld.current = true;
       if (e.key === "Escape") return void flush().then(close);
       if (e.key === " ") {
         e.preventDefault();
@@ -266,12 +317,19 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
     };
     const up = (e: KeyboardEvent) => {
       if (e.key === " ") spaceHeld.current = false;
+      if (e.key === "Alt") altHeld.current = false;
+    };
+    const blur = () => {
+      spaceHeld.current = false;
+      altHeld.current = false;
     };
     window.addEventListener("keydown", down, true);
     window.addEventListener("keyup", up, true);
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("keydown", down, true);
       window.removeEventListener("keyup", up, true);
+      window.removeEventListener("blur", blur);
     };
   });
 
@@ -368,7 +426,13 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
               <MagnifyingGlassPlus size={14} />
             </IconButton>
           </span>
-          <span className="ml-auto text-ink-2" title="Space + drag pans, [ and ] change the size, ⌘Z undoes">
+          <span
+            className={cx("ml-auto rounded-full px-2 py-0.5 text-[11.5px] font-medium", pressureLive !== null ? "bg-[#e3f1e9] text-ok" : "bg-wash text-ink-2")}
+            title="Pen tablets (XP-Pen, Wacom, Huion) set line weight by pressure. Express keys: B brush, E eraser, Space pan, Option + drag size, ⌘Z undo, ⌘+ ⌘− zoom. Pen side button erases."
+          >
+            {pressureLive !== null ? `Pen pressure ${pressureLive}%` : "Pen: hover to detect"}
+          </span>
+          <span className="text-ink-2" title="Space + drag pans, [ and ] change the size, ⌘Z undoes">
             {saving > 0 ? "Saving…" : "Saved"}
           </span>
           <IconButton label="Done (Esc)" size="sm" onClick={() => void flush().then(close)}>
@@ -386,6 +450,7 @@ export function DrawEditor({ story, panel }: { story: StoryDetail; panel: Panel 
               onPointerUp={onUp}
               onPointerCancel={onUp}
               onPointerLeave={() => setHover(null)}
+              onContextMenu={(e) => e.preventDefault()} // a pen's barrel button is a right click: it erases instead
             >
               {base && <img src={base} alt="" draggable={false} className="pointer-events-none absolute inset-0 size-full object-fill" />}
               {layers.map((l) => (
