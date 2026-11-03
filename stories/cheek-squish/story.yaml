@@ -80,124 +80,125 @@ panels:
     refs: [sheet, room]
     use: [style, kai, daughter, setting]
     action: >-
-      Kai sits on the left of the sofa, smiling softly, gently pinching both cheeks of his daughter
-      who sits on the right facing him. Her cheeks are squished and blushing, eyes squeezed shut,
-      little fists raised.
+      Kai sits on the left of the sofa and leans toward his daughter, who sits on the right facing him. BOTH of Kai's hands hold HIS DAUGHTER'S face and squeeze her cheeks (his hands are on her face, not on his own). Her cheeks are squished and blushing, eyes squeezed shut, little fists raised. Kai smiles playfully.
     bubbles:
-      - {text: "Daaad! My cheeks are already squishy!", at: [0.72, 0.1], w: 0.46, tail: [0.66, 0.42], style: shout}
-    sfx:
-      - {text: "#", at: [0.2, 0.08], size: 1.6, rotate: -12}
-
+      - {id: b1, text: "Daaad! My cheeks are already squishy!", at: [0.68, 0.13], w: 0.46, tail: [0.73, 0.42], style: speech}
+    sfx: []
   - id: p02
-    title: Mom watches
+    title: Jealous
     refs: [sheet, room]
     use: [style, kai, aoi, daughter, setting]
     action: >-
-      Same pose as before: Kai still squishing his daughter's cheeks; she laughs with her mouth open
-      and eyes curved shut. Behind the sofa on the left, Aoi peeks over the backrest, chin resting on
-      her hands, watching them with a gentle, slightly envious smile.
+      Same as before: Kai on the sofa still squeezing his giggling daughter's cheeks with both hands. Behind the sofa backrest, Aoi peeks over it, both arms folded on top of the backrest, chin on her arms, POUTING: puffed cheeks, lips pushed out, jealous narrowed eyes, staring at Kai. Aoi does not touch anyone.
     bubbles:
-      - {text: "Hehehe! Stooop! You're making them even squishier!", at: [0.62, 0.1], w: 0.5, tail: [0.5, 0.4]}
-
+      - {id: b1, text: "Hehehe! Stooop!", at: [0.2, 0.56], w: 0.32, tail: [0.42, 0.62], style: speech}
+      - {id: b2, text: Hmph., at: [0.6, 0.08], w: 0.2, tail: [0.72, 0.15], style: thought}
+    sfx: []
   - id: p03
     title: Candy
     refs: [sheet, room]
     use: [style, kai, daughter, setting]
     action: >-
-      Kai sits on the sofa, one hand on his knee, pointing with his other index finger toward the glass
-      candy jar on the kitchen counter behind. His daughter stands beside the sofa, fists clenched at
-      her chest in excitement, sparkling eyes, open-mouthed smile, looking up at him.
+      Kai sits on the sofa, glancing sideways with a knowing smile, and points with his index finger toward the glass candy jar on the kitchen counter in the background. His daughter stands beside the sofa, fists clenched at her chest in excitement, sparkling eyes, open-mouthed smile.
     bubbles:
-      - {text: "Here. Go pick yourself some candy.", at: [0.38, 0.08], w: 0.42, tail: [0.3, 0.22]}
-      - {text: "YAY! BEST DAD EVER!", at: [0.8, 0.24], w: 0.34, tail: [0.84, 0.46], style: shout}
-
+      - {id: b1, text: "Go pick yourself some candy.", at: [0.24, 0.1], w: 0.42, tail: [0.35, 0.2], style: speech}
+      - {id: b2, text: "YAY!", at: [0.74, 0.38], w: 0.22, tail: [0.75, 0.48], style: shout}
+    sfx: []
   - id: p04
-    title: Aoi slides in
+    title: What's up?
     refs: [sheet, room]
     use: [style, kai, aoi, daughter, setting]
     action: >-
-      Kai sits on the left of the sofa looking sideways, puzzled. Aoi now sits close on his right,
-      leaning toward him with her eyes half closed and lips puckered expectantly. Far in the background
-      at the kitchen counter, the small daughter stands on tiptoe reaching into the candy jar.
+      Kai sits on the left of the sofa and turns to Aoi, eyebrows raised, a gentle questioning smile. Aoi sits close on his right with her arms crossed, cheeks puffed in a pout, looking away from him. Far in the background the small daughter runs toward the candy jar on the kitchen counter.
     bubbles:
-      - {text: "Aoi... what are you doing?", at: [0.32, 0.08], w: 0.38, tail: [0.3, 0.2]}
+      - {id: b1, text: "So... what's up?", at: [0.3, 0.07], w: 0.38, tail: [0.32, 0.15], style: speech}
     sfx:
-      - {text: "?", at: [0.2, 0.24], size: 1.4}
-
+      - {text: "?", at: [0.12, 0.2], size: 1.4}
   - id: p05
+    title: My turn
+    refs: [sheet, room]
+    use: [style, kai, aoi, setting]
+    action: >-
+      Kai and Aoi sit side by side on the sofa facing each other. Aoi points both index fingers at her own puffed blushing cheeks and looks up at him with a small pout. Kai looks at her, surprised, eyes wide.
+    bubbles:
+      - {id: b1, text: "Squeeze mine too.", at: [0.62, 0.12], w: 0.38, tail: [0.69, 0.28], style: speech}
+    sfx: []
+  - id: p06
+    title: Flustered
+    refs: [sheet, room]
+    use: [style, kai, aoi, setting]
+    action: >-
+      Close two-shot on the sofa. Kai is embarrassed: bright red blushing face, one hand rubbing the back of his neck, looking away, a small sweat drop. Aoi sits close, chin up, cheeks puffed, determined, waiting.
+    bubbles:
+      - {id: b1, text: "H-huh? Right now?", at: [0.22, 0.09], w: 0.36, tail: [0.34, 0.2], style: speech}
+      - {id: b2, text: "Right now.", at: [0.76, 0.15], w: 0.3, tail: [0.78, 0.29], style: speech}
+    sfx: []
+  - id: p07
     title: Waiting
     refs: [sheet, room]
     use: [style, kai, aoi, setting]
     action: >-
-      Kai and Aoi sit side by side on the sofa facing each other. Aoi points both index fingers at her
-      own puffed cheeks, looking up at him with a small pout. Kai looks at her, surprised.
+      Close-up: Aoi leans her face right up toward Kai with her eyes shut, cheeks puffed and pink, chin raised, waiting. Kai, red-faced, looks down at her, hands half raised and hesitating.
     bubbles:
-      - {text: "Waiting for my turn.", at: [0.62, 0.08], w: 0.34, tail: [0.66, 0.2]}
-
-  - id: p06
-    title: Jealous?
-    refs: [sheet, room]
-    use: [style, kai, aoi, setting]
-    action: >-
-      Kai rests his chin on his fist with a teasing smirk, looking at Aoi. Aoi sits close, chin on her
-      hand, smiling and looking up at him. The daughter is a tiny figure at the candy jar in the far
-      background.
-    bubbles:
-      - {text: "...Are you jealous of our daughter?", at: [0.42, 0.08], w: 0.44, tail: [0.3, 0.2]}
-
-  - id: p07
-    title: Pout
-    refs: [sheet, room]
-    use: [style, kai, aoi, setting]
-    action: >-
-      Close-up two-shot. Aoi leans in toward Kai with a big pout, puffed blushing cheeks and a small
-      anger vein mark near her head. Kai looks at her calmly with a faint smile.
-    bubbles:
-      - {text: "Yes! I can't let my own daughter beat me, Kai!", at: [0.72, 0.1], w: 0.44, tail: [0.7, 0.24], style: shout}
-
-  - id: p08
-    title: Give it
-    refs: [sheet, room]
-    use: [style, kai, aoi, setting]
-    action: >-
-      Aoi pushes her face right up to Kai, eyes shut, cheeks puffed and bright red, leaning on him.
-      Kai turns his head slightly away, hand over his mouth, holding back a laugh.
-    bubbles:
-      - {text: "Give it to me already!!", at: [0.74, 0.1], w: 0.36, tail: [0.62, 0.34], style: shout}
-
-  - id: p09
-    title: Winner
-    refs: [sheet, room]
-    use: [style, kai, aoi, setting]
-    action: >-
-      Kai smiles warmly and gently squishes both of Aoi's cheeks with his hands. Aoi has her eyes
-      closed with a huge happy blushing smile, a tiny heart floating beside her cheek.
-    bubbles:
-      - {text: "There. Happy now?", at: [0.158, 0.289], w: 0.32, tail: [0.3, 0.2]}
-      - {text: "Mhm! I'm the winner~", at: [0.74, 0.2], w: 0.34, tail: [0.7, 0.32]}
+      - {id: b1, text: "Come on!!", at: [0.76, 0.13], w: 0.32, tail: [0.62, 0.29], style: shout}
     sfx: []
-  - id: p10
-    title: Outro
-    refs: [sheet]
-    use: [style, kai, aoi, daughter]
+  - id: p08
+    title: Squish
+    refs: [sheet, room]
+    use: [style, kai, aoi, setting]
     action: >-
-      Plain white background. Kai, Aoi and their daughter in a cheerful group shot, all smiling and
-      waving at the viewer, the daughter in front, small motion lines next to the waving hands.
+      Only Kai and Aoi are in this panel, both SITTING on the grey sofa in the living room, medium close-up from the waist up. Kai, blushing bright red and embarrassed, gently squeezes both of Aoi's cheeks with BOTH of his hands while looking slightly away. Aoi's eyes are closed with a huge happy blushing smile, a tiny heart floating beside her cheek. No child in this panel. Not standing, not a line-up.
     bubbles:
-      - {text: "See you guys in the next story~", at: [0.72, 0.1], w: 0.4, tail: [0.66, 0.22]}
+      - {id: b1, text: '...There.', at: [0.15, 0.07], w: 0.26, tail: [0.26, 0.14], style: speech}
+      - {id: b2, text: Mhm~, at: [0.82, 0.14], w: 0.24, tail: [0.76, 0.27], style: speech}
+    sfx: []
+    avoid: >-
+      t-shirt, white shirt, grey shirt, dress shirt, navy or dark blue hair, short hair, bob cut, pink dress, warm orange lighting, saturated colors, thick outlines, glossy shading, any text, the daughter, a child, standing in a row, character line-up, waving, white background
+  - id: p09
+    title: Caught
+    refs: [sheet, room]
+    use: [style, kai, aoi, daughter, setting]
+    action: >-
+      Wide landscape shot of the living room. On the left, Kai and Aoi sit on the grey sofa: Kai, blushing, still squeezing Aoi's cheeks with both hands, and both turn their heads toward the right in surprise. On the right side of the frame, their daughter has just come back from the kitchen counter, holding a wrapped candy in one hand and covering her mouth with the other, giggling, eyes curved shut. Keep empty space at the top of the frame.
+    bubbles:
+      - {id: b1, text: Hehehe~, at: [0.86, 0.12], w: 0.2, tail: [0.87, 0.42], style: speech}
+    sfx: []
+    width: 1152
+    height: 864
+  - id: p10
+    title: Giggles
+    refs: [sheet, room]
+    use: [style, kai, aoi, daughter, setting]
+    action: >-
+      Wide landscape shot. In the right foreground, the daughter holds up her candy and laughs out loud with her eyes shut and mouth open. Behind her on the left, on the grey sofa, Kai hides his bright red embarrassed face behind one hand, and Aoi beside him smiles happily, cheeks still pink. All three faces fully visible. Keep empty space at the top of the frame.
+    bubbles:
+      - {id: b1, text: "Mommy's cheeks are squishy too!", at: [0.8, 0.14], w: 0.34, tail: [0.86, 0.5], style: speech}
+      - {id: b2, text: "...", at: [0.18, 0.12], w: 0.12, tail: [0.28, 0.22], style: speech}
+    sfx:
+      - {text: giggle, at: [0.69, 0.4], size: 1.1, rotate: -8}
+    width: 1152
+    height: 864
+format:
+  mode: webtoon
+  direction: rtl
+  page:
+    width: 1654
+    height: 2339
+  gutter: 0.018
+  margin: 0.06
 pages:
   - id: pg1
     panels:
-      - {panel: p01, box: [0.5102, 0, 0.4898, 0.493]}
-      - {panel: p02, box: [0, 0, 0.4898, 0.493]}
-      - {panel: p03, box: [0.5102, 0.507, 0.4898, 0.493]}
-      - {panel: p04, box: [0, 0.507, 0.4898, 0.493]}
+      - {panel: p01, box: [0.5126, 0, 0.4874, 0.493]}
+      - {panel: p02, box: [0, 0, 0.4874, 0.493]}
+      - {panel: p03, box: [0.5126, 0.507, 0.4874, 0.493]}
+      - {panel: p04, box: [0, 0.507, 0.4874, 0.493]}
   - id: pg2
     panels:
-      - {panel: p05, box: [0.5102, 0, 0.4898, 0.493]}
-      - {panel: p06, box: [0, 0, 0.4898, 0.493]}
-      - {panel: p07, box: [0.5102, 0.507, 0.4898, 0.493]}
-      - {panel: p08, box: [0, 0.507, 0.4898, 0.493]}
+      - {panel: p05, box: [0.5126, 0, 0.4874, 0.493]}
+      - {panel: p06, box: [0, 0, 0.4874, 0.493]}
+      - {panel: p07, box: [0.5126, 0.507, 0.4874, 0.493]}
+      - {panel: p08, box: [0, 0.507, 0.4874, 0.493]}
   - id: pg3
     panels:
       - {panel: p09, box: [0, 0, 1, 0.493]}

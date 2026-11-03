@@ -336,6 +336,23 @@ function BackendChecks() {
           }
         />
       )}
+      {b.foreign && (
+        <CheckRow
+          tone="err"
+          icon={<WarningCircle size={18} />}
+          label="Another Manga Studio is using the engine port"
+          detail={
+            <span className="flex flex-col gap-1.5">
+              <span className="selectable">{b.foreign}</span>
+              <span>
+                <Button size="sm" variant="ghost" onClick={() => void tauri("restart_backend").catch(() => {})}>
+                  Try again
+                </Button>
+              </span>
+            </span>
+          }
+        />
+      )}
     </>
   );
 }

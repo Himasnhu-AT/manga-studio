@@ -108,3 +108,37 @@ def test_sample_template_falls_back_to_bundled_copy(monkeypatch, tmp_path):
     d = empty / slug
     assert (d / "story.yaml").exists() and any((d / "refs").iterdir())
     shutil.rmtree(d)
+
+
+def test_status_reports_stories_folder_and_mismatch_is_caught(tmp_path):
+    """Port 7860 can be held by another studio (a checkout's dev server vs. the installed app).
+    /api/status says which stories folder it serves, so the app, MCP and CLI can refuse the wrong one."""
+    from fastapi.testclient import TestClient
+
+    from studio import server, story as st
+
+    status = TestClient(server.app).get("/api/status").json()
+    assert status["stories"] == str(st.STORIES)
+    assert st.backend_mismatch(status) is None
+    assert "saves stories in" in st.backend_mismatch({**status, "stories": str(tmp_path)})
+    assert "doesn't say where" in st.backend_mismatch({"rev": 1})  # an older backend
+
+
+def test_mcp_refuses_a_backend_with_another_stories_folder(monkeypatch, tmp_path):
+    import httpx
+
+    from studio import mcp_server
+
+    class Resp:
+        def json(self):
+            return {"rev": 1, "stories": str(tmp_path)}
+
+    monkeypatch.setattr(mcp_server, "_checked", False)
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: Resp())
+    called = []
+    monkeypatch.setattr(httpx, "request", lambda *a, **k: called.append(a))
+    import pytest
+
+    with pytest.raises(RuntimeError, match="Wrong backend"):
+        mcp_server._api("GET", "/api/stories")
+    assert not called  # nothing was sent to the wrong backend

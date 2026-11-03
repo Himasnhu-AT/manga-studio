@@ -11,6 +11,7 @@ import {
   NotePencil,
   Plus,
   Selection,
+  Sparkle,
   Stack,
   Trash,
   UploadSimple,
@@ -26,6 +27,8 @@ import { Badge, Button, IconButton, Input, Progress, Segmented, Textarea, cx } f
 import { CastStudio } from "./CastStudio";
 import { Copilot } from "./Copilot";
 import { Versions } from "./Versions";
+import { useStudio } from "./studioState";
+import { STAGE_META, STAGES } from "../../lib/stages";
 import { Chip, Collapse, Slider, Thumb, refName, refThumb, useSyncedText } from "./side-common";
 
 export function Inspector({ story, panel }: { story: StoryDetail; panel: Panel | null }) {
@@ -178,6 +181,7 @@ function PanelInspector({ story, panel, openCast }: { story: StoryDetail; panel:
       </div>
 
       <div className="flex flex-col gap-3 px-4 pb-4">
+        {panel.strip !== false && <StageRow panel={panel} patch={patch} />}
         <Versions story={story} panel={panel} onUseSource={setSource} />
         <GenerateRow story={story} panel={panel} />
       </div>
@@ -249,6 +253,34 @@ function PanelInspector({ story, panel, openCast }: { story: StoryDetail; panel:
   );
 }
 
+/** The panel's production stage: Name, Pencils, Inks, Blacks, Tone, Finish, Letters. Click again to clear. */
+function StageRow({ panel, patch }: { panel: Panel; patch: (b: Record<string, unknown>) => unknown }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="type-label">Stage</span>
+      <div className="grid grid-cols-4 gap-1">
+        {STAGES.map((s) => {
+          const on = panel.stage === s;
+          const m = STAGE_META[s];
+          return (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={on}
+              title={m.hint}
+              onClick={() => void patch({ stage: on ? null : s })}
+              className={cx("pressable h-7 rounded-[7px] text-[11.5px] font-medium", on ? "font-semibold" : "border border-line-2 text-ink-2 hover:text-ink")}
+              style={on ? { background: m.bg, color: m.fg } : undefined}
+            >
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function GenerateRow({ story, panel }: { story: StoryDetail; panel: Panel }) {
   const [count, setCount] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -267,9 +299,14 @@ function GenerateRow({ story, panel }: { story: StoryDetail; panel: Panel }) {
       )}
       <div className="flex items-center gap-2">
         <Segmented size="sm" value={String(count)} onChange={(v) => setCount(Number(v))} options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: <span className="num">{n}</span>, title: `${n} version${n > 1 ? "s" : ""}` }))} />
+        {panel.pick && (
+          <Button className="ml-auto" icon={<Sparkle size={13} weight="fill" className="text-accent" />} onClick={() => useStudio.getState().setRefine(true)} title="Turn your drawing into clean lines, inks, tone or color">
+            Refine
+          </Button>
+        )}
         <Button
           variant="primary"
-          className="ml-auto"
+          className={panel.pick ? undefined : "ml-auto"}
           loading={busy}
           disabled={!!panel.plan_error}
           onClick={async () => {

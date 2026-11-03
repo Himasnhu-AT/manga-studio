@@ -313,3 +313,234 @@ def test_export_frames_wide_slot_like_canvas():
     assert with_bubble.getpixel((500, 5))[:3] == (220, 30, 30)  # top of the art stays in view
     centred = export._fit(art, {}, 1000, 500)
     assert centred.getpixel((500, 5))[:3] == (240, 240, 240)  # plain cover crop cuts the top band
+
+
+def test_page_devices_validate_and_export(sample):
+    """Manga page devices: empty slots, borders, bleed, a page background, black paper, and the cut-out
+    character (pop out of the frame / float with no frame) all save and export."""
+    url = f"/api/stories/{sample}/pages"
+    # empty slots are allowed (templates and splits leave them); bad values are refused
+    assert client.put(url, json={"pages": [{"id": "pg1", "panels": [{"panel": "", "box": [0, 0, 1, 1]}]}]}).status_code == 200
+    assert client.put(url, json={"pages": [{"id": "pg1", "panels": [{"panel": "p01", "box": [0, 0, 1, 1], "border": "wavy"}]}]}).status_code == 400
+    assert client.put(url, json={"pages": [{"id": "pg1", "panels": [{"panel": "p01", "box": [0, 0, 1, 1], "subject": "float"}]}]}).status_code == 400
+    assert client.put(url, json={"pages": [{"id": "pg1", "background": {"panel": "nope"}, "panels": []}]}).status_code == 400
+
+    # cut out p01's character by clicking it (colour flood where Vision isn't available)
+    r = client.post(f"/api/stories/{sample}/panels/p01/subject", json={"point": [0.5, 0.5]})
+    assert r.status_code == 200, r.text
+    assert r.json()["subject"].startswith("out/p01/masks/subject-")
+    d = client.get(f"/api/stories/{sample}").json()
+    assert next(p for p in d["panels"] if p["id"] == "p01")["subject"]
+
+    pages = [
+        {
+            "id": "pg1",
+            "paper": "black",
+            "background": {"panel": "p02", "opacity": 0.5},
+            "panels": [
+                {"panel": "p03", "box": [0, 0, 1, 0.3], "bleed": True, "border": "bold"},
+                {"panel": "p01", "box": [0.5, 0.33, 0.5, 0.3], "subject": "pop"},
+                {"panel": "p04", "box": [0, 0.33, 0.48, 0.3], "border": "none"},
+                {"panel": "p01", "box": [0.1, 0.66, 0.5, 0.34], "subject": "cutout"},
+                {"panel": "", "box": [0.62, 0.66, 0.38, 0.34]},
+            ],
+        }
+    ]
+    assert client.put(url, json={"pages": pages}).status_code == 200
+    r = client.post(f"/api/stories/{sample}/export", json={"formats": ["png", "svg"], "preset": "print-a5"})
+    assert r.status_code == 200, r.text
+    files = r.json()["files"]
+    root = st.STORIES / sample
+    im = Image.open(root / next(f for f in files if f.endswith(".png"))).convert("RGB")
+    # the bled top panel reaches the very corner of the bleed; plain paper elsewhere stays black
+    assert im.getpixel((1, 1)) != export.PAPERS["black"]
+    geo = export.page_geometry(st.load(sample), "print-a5", None, None)
+    lx, ly, lw, lh = geo["live"]
+    gutter_px = (int(lx + 0.49 * lw), int(ly + 0.315 * lh))  # between the rows, no panel there
+    assert sum(im.getpixel(gutter_px)) < 3 * 140  # black paper behind a 50% background
+    svg = (root / next(f for f in files if f.endswith(".svg"))).read_text()
+    # frame lines: the bold bled panel and the pop-out panel; none for the borderless, cutout or empty slots
+    assert svg.count('fill="none" stroke="#19191e"') == 2
+    assert 'class="page-background"' in svg and 'class="subject pop"' in svg and 'class="subject cutout"' in svg
+
+    # clearing the cut-out falls back to a normal framed panel
+    assert client.post(f"/api/stories/{sample}/panels/p01/subject", json={"clear": True}).json()["subject"] is None
+    assert client.post(f"/api/stories/{sample}/export", json={"formats": ["png"]}).status_code == 200
+
+
+def test_import_art_becomes_picked_version(sample):
+    """Your own drawing goes straight in as a version (transparent -> white paper, huge scans shrunk)."""
+    buf = io.BytesIO()
+    sketch = Image.new("RGBA", (4000, 5000), (0, 0, 0, 0))
+    ImageDraw.Draw(sketch).line([(100, 100), (3900, 4900)], fill=(30, 60, 200, 255), width=20)
+    sketch.save(buf, "PNG")
+    r = client.post(f"/api/stories/{sample}/panels/p03/import", files={"file": ("rough page.png", buf.getvalue(), "image/png")})
+    assert r.status_code == 200, r.text
+    f = r.json()["file"]
+    s = st.load(sample)
+    assert st.picked_version(s, "p03") == f and f.endswith("-s0.png")
+    im = Image.open(s.dir / "out" / "p03" / f)
+    assert max(im.size) == server.ART_MAX_SIDE and im.mode == "RGB" and im.getpixel((5, 5)) == (255, 255, 255)
+    meta = json.loads((s.dir / "out" / "p03" / f).with_suffix(".json").read_text())
+    assert meta["engine"] == "import" and meta["imported"] == "rough page.png"
+    assert client.post(f"/api/stories/{sample}/panels/p03/import", files={"file": ("notes.txt", b"hi", "text/plain")}).status_code == 400
+    assert client.post(f"/api/stories/{sample}/panels/p03/import", files={"file": ("bad.png", b"nope", "image/png")}).status_code == 400
+
+
+def test_refine_sketch_keeps_the_drawing_shape(sample):
+    """Refine starts from the artist's drawing, at its shape and the story's usual size, with a preset prompt."""
+    buf = io.BytesIO()
+    Image.new("RGB", (3000, 1500), "white").save(buf, "PNG")  # a wide panel sketch
+    f = client.post(f"/api/stories/{sample}/panels/p05/import", files={"file": ("wide.png", buf.getvalue(), "image/png")}).json()["file"]
+    r = client.post(f"/api/stories/{sample}/panels/p05/refine", json={"preset": "tone", "count": 1})
+    assert r.status_code == 200, r.text
+    assert r.json()["source"] == f and r.json()["strength"] == 0.6
+    job = wait_jobs(r.json()["jobs"])[0]
+    assert job["status"] == "done", job
+    plan = job["plan"]
+    assert plan["refs"][0]["version"] == f and "artist's own drawing" in plan["refs"][0]["label"]
+    assert "screentone" in plan["prompt"] and plan["width"] % 32 == 0 and plan["height"] % 32 == 0 and abs(plan["width"] / plan["height"] - 2) < 0.05
+    assert plan["width"] * plan["height"] < 1.2 * 864 * 1152
+    meta = json.loads((st.STORIES / sample / "out" / "p05" / job["file"]).with_suffix(".json").read_text())
+    assert meta["refine"] == "tone" and meta["source"] == f
+    assert client.post(f"/api/stories/{sample}/panels/p05/refine", json={"preset": "sparkles"}).status_code == 400
+    # high strength: the drawing becomes a layout guide that the prompt fills in
+    r = client.post(f"/api/stories/{sample}/panels/p05/refine", json={"preset": "inks", "strength": 0.9, "count": 1, "source": f, "prompt": "a girl holding a candy"})
+    plan = wait_jobs(r.json()["jobs"])[0]["plan"]
+    assert "rough layout guide" in plan["prompt"] and "exactly as drawn" not in plan["prompt"] and "a girl holding a candy" in plan["prompt"]
+    assert "follow its layout" in plan["refs"][0]["label"] and plan["strength"] == 1.0
+
+
+def test_drawing_layers_render_and_merge(sample):
+    """Layers drawn in the Studio show in every render (even with no version yet) and merge into a version."""
+    pid = client.post(f"/api/stories/{sample}/panels", json={"title": "Drawn"}).json()["id"]
+    rough = Image.new("RGBA", (400, 600), (0, 0, 0, 0))
+    ImageDraw.Draw(rough).line([(0, 0), (399, 599)], fill=(90, 140, 210, 255), width=12)
+    inks = Image.new("RGBA", (400, 600), (0, 0, 0, 0))
+    ImageDraw.Draw(inks).rectangle([150, 250, 250, 350], fill=(20, 20, 20, 255))
+
+    def url(im):
+        b = io.BytesIO()
+        im.save(b, "PNG")
+        return "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()
+
+    assert client.patch(f"/api/stories/{sample}/panels/{pid}", json={"drawing": [{"id": "rough", "name": "Rough", "opacity": 0.5}, {"id": "inks", "name": "Inks"}]}).status_code == 200
+    assert client.put(f"/api/stories/{sample}/panels/{pid}/drawing/rough", json={"png": url(rough)}).status_code == 200
+    assert client.put(f"/api/stories/{sample}/panels/{pid}/drawing/inks", json={"png": url(inks)}).status_code == 200
+    assert client.put(f"/api/stories/{sample}/panels/{pid}/drawing/Bad%20Id", json={"png": url(inks)}).status_code == 400
+    d = client.get(f"/api/stories/{sample}").json()
+    assert set(next(p for p in d["panels"] if p["id"] == pid)["drawing_files"]) == {"rough", "inks"}
+
+    from studio.compose import render_panel
+
+    img = render_panel(st.load(sample), pid)  # no version yet: white paper + layers
+    assert img.size == (400, 600) and img.getpixel((200, 300))[:3] == (20, 20, 20)
+    r, g, b, _ = img.getpixel((5, 5))  # the blue rough at 50% over white
+    assert b > r and r > 90
+
+    f = client.post(f"/api/stories/{sample}/panels/{pid}/drawing/merge").json()["file"]
+    s = st.load(sample)
+    assert st.picked_version(s, pid) == f
+    assert Image.open(s.dir / "out" / pid / f).getpixel((200, 300)) == (20, 20, 20)
+    assert not (s.dir / "out" / pid / "drawing" / "inks.png").exists()
+    assert client.post(f"/api/stories/{sample}/panels/{pid}/drawing/merge").status_code == 400
+
+
+def _page_with_panels(rects, size=(1240, 1754)):
+    """A white page with bordered panels drawn in it (rects in px), like a scan of hand-drawn work."""
+    page = Image.new("RGB", size, "white")
+    d = ImageDraw.Draw(page)
+    for x0, y0, x1, y1 in rects:
+        d.rectangle([x0, y0, x1, y1], outline=(15, 15, 15), width=6)
+        d.line([(x0 + 40, y0 + 60), (x1 - 40, y1 - 60)], fill=(60, 110, 200), width=5)  # some blue pencil art
+    d.text((600, 1700), "12", fill=(0, 0, 0))  # a page number in the margin is not a panel
+    return page
+
+
+def test_detect_panels_on_a_scanned_page():
+    from studio import pagescan
+
+    rects = [(80, 80, 1160, 560), (640, 600, 1160, 1100), (80, 600, 600, 1100), (80, 1140, 1160, 1670)]
+    found = pagescan.detect_panels(_page_with_panels(rects), rtl=True)
+    assert len(found) == 4
+    W, H = 1240, 1754
+    want = [rects[0], rects[1], rects[2], rects[3]]  # reading order, right to left: top, right, left, bottom
+    for f, (x0, y0, x1, y1) in zip(found, want):
+        x, y, w, h = f["box"]
+        assert abs(x - x0 / W) < 0.01 and abs(y - y0 / H) < 0.01 and abs(w - (x1 - x0) / W) < 0.015 and abs(h - (y1 - y0) / H) < 0.015
+        assert f["unclear"] is False
+    ltr = pagescan.detect_panels(_page_with_panels(rects), rtl=False)
+    assert ltr[1]["box"][0] < ltr[2]["box"][0]  # left panel first when reading left to right
+
+
+def test_scan_import_creates_panels_and_a_page(sample):
+    rects = [(80, 80, 1160, 560), (640, 600, 1160, 1100), (80, 600, 600, 1100), (0, 1140, 1240, 1754)]
+    buf = io.BytesIO()
+    _page_with_panels(rects).save(buf, "PNG")
+    r = client.post(f"/api/stories/{sample}/pages/scan", files={"file": ("ch1 page 03.png", buf.getvalue(), "image/png")})
+    assert r.status_code == 200, r.text
+    scan = r.json()
+    assert scan["scan"] == "scans/ch1-page-03.png" and len(scan["panels"]) >= 3
+    boxes = [[r_[0] / 1240, r_[1] / 1754, (r_[2] - r_[0]) / 1240, (r_[3] - r_[1]) / 1754] for r_ in rects]
+    r = client.post(f"/api/stories/{sample}/pages/scan/apply", json={"scan": scan["scan"], "boxes": boxes, "stage": "pencils"})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    s = st.load(sample)
+    page = next(pg for pg in s.data["pages"] if pg["id"] == out["page"])
+    assert [sl["panel"] for sl in page["panels"]] == out["panels"]
+    assert page["panels"][3].get("bleed") is True and not page["panels"][0].get("bleed")
+    assert all(sl["border"] == "none" for sl in page["panels"])  # the scan has the artist's own frame lines
+    p = s.panel(out["panels"][1])
+    assert p["stage"] == "pencils"
+    v = st.picked_version(s, p["id"])
+    assert Image.open(s.dir / "out" / p["id"] / v).size == (520, 500)
+    assert client.post(f"/api/stories/{sample}/pages/scan/apply", json={"scan": "../story.yaml", "boxes": boxes}).status_code == 400
+    assert client.post(f"/api/stories/{sample}/pages/scan/apply", json={"scan": scan["scan"], "boxes": boxes, "stage": "done"}).status_code == 400
+
+
+def test_detect_panels_without_opencv(monkeypatch):
+    """The pure-numpy path finds the same panels when OpenCV isn't installed."""
+    import sys
+
+    from studio import pagescan
+
+    monkeypatch.setitem(sys.modules, "cv2", None)  # import cv2 -> ImportError
+    monkeypatch.setattr(pagescan, "WORK_SIDE", 300)  # keep the BFS quick
+    rects = [(80, 80, 1160, 560), (80, 600, 1160, 1670)]
+    found = pagescan.detect_panels(_page_with_panels(rects), rtl=True)
+    assert len(found) == 2 and abs(found[1]["box"][1] - 600 / 1754) < 0.02
+
+
+def test_detect_splits_panels_joined_by_a_bubble():
+    from studio import pagescan
+
+    page = _page_with_panels([(80, 1120, 560, 1670), (600, 1120, 1160, 1670), (80, 80, 1160, 1080)])
+    ImageDraw.Draw(page).ellipse([480, 1180, 700, 1300], outline=(20, 20, 20), width=5, fill="white")  # bubble over the gutter
+    found = pagescan.detect_panels(page, rtl=True)
+    assert len(found) == 3
+    right, left = found[1]["box"], found[2]["box"]
+    assert abs(right[0] - 600 / 1240) < 0.02 and abs(left[0] - 80 / 1240) < 0.01 and left[0] + left[2] < 0.5
+
+
+def test_video_hit_lands_song_moment_on_panel(sample, tmp_path):
+    """--hit p03@20 starts the song so second 20 plays the moment panel p03 appears."""
+    import shutil
+    import subprocess
+
+    from studio import compose, video
+
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed")
+    s = st.load(sample)
+    for p in s.panels:
+        if p.get("strip", True) is not False:
+            compose.compose_panel(s, p["id"])
+    song = tmp_path / "song.wav"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=90", str(song)], check=True)
+    ids = [p["id"] for p in s.panels if p.get("strip", True) is not False]
+    durs = [video._hold(p) + (0.5 if 0 < i < len(ids) - 1 else 0.25) for i, p in enumerate(p for p in s.panels if p.get("strip", True) is not False)]
+    t3 = video.panel_start(durs, 0.5, ids.index("p03"))
+    assert t3 > 0
+    out = video.make_video(s, audio=song, hit=("p03", 20.0), out=tmp_path / "v.mp4")
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(out)], capture_output=True, text=True)
+    assert probe.stdout.strip() == "aac"

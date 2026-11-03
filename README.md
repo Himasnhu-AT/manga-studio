@@ -14,6 +14,12 @@
 <p align="center"><sub>Three pages from a one-paragraph brief, drawn on a 24 GB MacBook and driven by Claude Code over MCP.
 <a href="https://mangastudio.marlstudio.com/#example">Watch it as a video</a>.</sub></p>
 
+<p align="center">
+  <a href="docs/media/manga-studio-launch.mp4"><img src="docs/media/launch-poster.jpg" width="80%" alt="A blue-pencil sketch of a girl holding a candy, and the colored panel Manga Studio drew from it in the series' style"></a>
+</p>
+<p align="center"><sub>Sketch a panel, attach your character, describe it: the AI draws it in your series' style,
+following your lines. <a href="docs/media/manga-studio-launch.mp4">Watch the 1-minute video</a>.</sub></p>
+
 A local manga/webtoon studio for Apple Silicon. Write or paste a story, draw it with
 **Qwen-Image-2.1 running on your Mac** (mflux / MLX), letter it with vector bubbles, read it, export it.
 Drive it by hand in the desktop app, or let Claude Code, Codex or a local Ollama model drive it
@@ -57,6 +63,22 @@ live:
 `MANGA_STUDIO_ROOT=<repo>` always runs the checkout's backend and stories instead.
 
 ## Two ways to make a story
+
+**Your own drawings.** Hand-drawn work comes first; AI helps finish it.
+
+- **Draw** on any panel: blue pencil for roughs, G-pen, maru pen and brush pen for inks, eraser,
+  pen pressure and smoothing, with layers (Rough, Inks, your own) that save as you draw.
+- **Import** a sketch, scan, inks or PSD onto a panel, or a whole scanned page: its panel borders are
+  found for you (even when a bubble crosses the gutter) and each panel keeps your art.
+- **Refine** a drawing into clean lines, inks, inks + tone or full color. "Follow my lines" sets how
+  closely it traces you; at the top it treats your sketch as a layout guide and draws it properly,
+  with your description and the panel's character references. Your drawing never changes; results
+  are versions you compare and pick.
+- **Manga page devices**: free and overlapping panels, custom shapes, bold/thin/no borders, bleed off
+  the page, a giant face or mood behind the whole page, black flashback pages, and characters that
+  pop out of their frame or float with no frame at all.
+- **Production stages** (Name, Pencils, Inks, Blacks, Tone, Finish, Letters) per panel with a
+  chapter progress bar, and a **Script** editor that holds every line of the page in reading order.
 
 **Studio (manual).** Page layouts (RTL/LTR grids, diagonal slices) or a vertical webtoon scroll.
 Each panel has layers: background, art, screentone/FX, and an SVG lettering layer. Bubbles

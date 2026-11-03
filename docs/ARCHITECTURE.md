@@ -47,12 +47,16 @@ moves everything out of its read-only, code-signed bundle (see "Desktop shell" b
 ## Desktop shell (`app/src-tauri/src/lib.rs`)
 
 On launch the shell reuses a backend already listening on 127.0.0.1:7860 or spawns one (its own
-process group; stopped on quit only if it spawned it). It picks one of two layouts:
+process group; stopped on quit only if it spawned it). It reuses one only if `/api/status` reports the
+same `stories` folder; a backend serving another folder (say a checkout's dev server while the
+installed app runs) blocks the window with a message instead. The MCP bridge and the CLI make the
+same check before sending anything. It picks one of two layouts:
 
-- **Dev** (debug build, `MANGA_STUDIO_ROOT` set, or a release binary outside a `.app` whose source
-  checkout exists): `uv run studio serve --port 7860` in the repo. Settings, log and stories as in a
-  checkout.
-- **Installed** (binary inside `<App>.app/Contents/MacOS`): the backend ships as Tauri resources in
+- **Dev** (debug build, or `MANGA_STUDIO_ROOT` set): `uv run studio serve --port 7860` in the repo.
+  Settings, log and stories as in a checkout. Release builds never look for the checkout they were
+  built from, and `scripts/release-mac.sh` remaps `$HOME` in source paths, so no path from the build
+  machine is baked in.
+- **Installed** (any other build): the backend ships as Tauri resources in
   `Contents/Resources/backend/` (`pyproject.toml`, `uv.lock`, `studio/**/*.py`, `templates/`,
   `dashboard/`, `fonts/`, `stories/cheek-squish/{story.yaml,refs/}`; listed in
   `tauri.conf.json` `bundle.resources`). It runs
@@ -97,9 +101,14 @@ blocks: {style: ..., setting: ...}  # verbatim text; if blocks[<cast id>] exists
 avoid: "..."
 pages:                  # page mode layout; boxes are fractions of the live area
   - id: pg1
-    panels:
-      - {panel: p01, box: [0, 0, 1, 0.32]}
+    paper: white           # optional: white | black (black page and gutters, for flashbacks)
+    background: {panel: p06, opacity: 0.35, crop: {x: 0.5, y: 0.5, scale: 1}}  # optional: full-bleed art behind every panel
+    panels:                # drawn in order: later slots sit on top of earlier ones (insets overlap)
+      - {panel: p01, box: [0, 0, 1, 0.32], bleed: true, border: bold}   # bleed: edges touching the margin run off the page
       - {panel: p02, box: [0, 0.34, 0.49, 0.3], poly: [[0,0],[1,0],[1,0.85],[0,1]]}  # poly: optional, fractions of the box
+      - {panel: p03, box: [0.51, 0.34, 0.49, 0.3], subject: pop}      # the cut-out character breaks out over the border (by <= 20% of the slot)
+      - {panel: p04, box: [0, 0.66, 0.5, 0.34], subject: cutout}      # no frame: only the character, fitted whole, floats on the page
+      - {panel: "", box: [0.52, 0.66, 0.48, 0.34], border: none}      # "" = empty slot; border: normal | bold | thin | none
 panels:
   - id: p01
     title: Squish
@@ -116,6 +125,10 @@ panels:
       fx: {visible: true, items: [{type: screentone, density: 0.5, opacity: 0.25, angle: 45}]}   # screentone | speedlines | focuslines
       lettering: {visible: true}
     protect: [[0.3, 0.2, 0.25, 0.25]]   # face / no-bubble boxes [x,y,w,h] fractions of panel
+    stage: inks                  # name | pencils | inks | blacks | tone | finish | letters (traditional order)
+    drawing:                     # hand-drawn layers, bottom to top; pixels in out/<pid>/drawing/<id>.png
+      - {id: rough, name: Rough, opacity: 0.45}
+      - {id: inks, name: Inks, visible: true}
     bubbles:
       - {id: b1, text: "Hi!", at: [0.7, 0.1], w: 0.4, tail: [0.62, 0.3], style: speech, size: 1.0, vertical: false}
     sfx:
@@ -145,6 +158,13 @@ v0.1: `GET /api/status`, `GET /api/stories`, `GET /api/stories/{slug}`, `POST /a
 | DELETE | /api/stories/{slug}/panels/{pid} | | `{ok}` |
 | PUT | /api/stories/{slug}/panels/order | `{order: [ids]}` (every panel id exactly once) | `{ok, order}` |
 | PUT | /api/stories/{slug}/pages | `{pages: [...]}` | `{ok}` |
+| POST | /api/stories/{slug}/panels/{pid}/import | multipart `file` (PNG, JPG, WebP, PSD, TIFF, BMP) | `{file}`: the artist's drawing becomes the next version (seed 0, `engine: import`) and is put in use |
+| POST | /api/stories/{slug}/panels/{pid}/refine | `{preset: clean\|inks\|tone\|color, strength?, count?, source?, prompt?}` | `{jobs, seeds, source, strength}`: img2img from the drawing at its own shape; results are versions with `refine`, `source` |
+| PUT / DELETE | /api/stories/{slug}/panels/{pid}/drawing/{lid} | `{png: dataURL}` | `{ok}`: one drawing layer's pixels (studio/drawing.py) |
+| POST | /api/stories/{slug}/panels/{pid}/drawing/merge | | `{file}`: visible layers baked into a new version (in use); the layers are cleared |
+| POST | /api/stories/{slug}/pages/scan | multipart `file` | `{scan, size, panels: [{box, unclear}]}`: page kept in `scans/`, panels found (studio/pagescan.py), nothing created |
+| POST | /api/stories/{slug}/pages/scan/apply | `{scan, boxes: [[x,y,w,h]...], stage?, title?}` | `{page, panels}`: one panel per box (its crop is version 1) and a new page placing them as drawn |
+| POST | /api/stories/{slug}/panels/{pid}/subject | `{point?: [x, y], clear?: bool}` | `{subject, method, area}`: cut-out mask of the picked version for `subject: pop \| cutout` (Apple Vision finds the figure; `point` picks one) |
 | POST | /api/stories/{slug}/pages/auto | `{per_page?: 4}` | `{pages}` |
 | PUT | /api/stories/{slug}/cast/{cid} | cast entry | `{ok}` |
 | DELETE | /api/stories/{slug}/cast/{cid} | | `{ok}` |
@@ -245,10 +265,10 @@ regenerate up to 3 times, then are `flagged` for a manual fix in Studio.
 
 stdio server built on mcp 2.3's `MCPServer` (FastMCP no longer exists there) that proxies to the HTTP
 API at `STUDIO_URL` (default http://127.0.0.1:7860). The workflow and consistency rules ship in the
-server instructions. 26 tools: `list_projects`, `get_project`, `create_project`, `update_story`,
+server instructions. 28 tools: `list_projects`, `get_project`, `create_project`, `update_story`,
 `update_panel`, `add_panel`, `set_cast`, `prompt_preview`, `generate` (waits by default),
 `copilot`, `segment`, `edit_image` (same op JSON as `/edit`; waits for fix/extend candidates), `view_image` (returns the picture, max 1024 px JPEG, so the agent can look), `jobs`,
-`get_feedback`, `resolve_note`, `pick_version`, `auto_letter`, `set_pages`, `auto_layout`, `export`, `pipeline_new`,
+`get_feedback`, `resolve_note`, `pick_version`, `auto_letter`, `set_pages`, `cut_out_character`, `refine_sketch`, `auto_layout`, `export`, `pipeline_new`,
 `pipeline_status`, `pipeline_run`, `pipeline_task`, `pipeline_submit`. When the backend isn't
 running, tools fail with a message telling the agent to open the app or run `uv run studio serve`.
 

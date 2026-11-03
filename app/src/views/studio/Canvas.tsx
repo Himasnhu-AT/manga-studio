@@ -6,14 +6,15 @@
 import { animate, motion, useMotionValue } from "motion/react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ImageSquare, Sparkle } from "@phosphor-icons/react";
-import { Api, type Page, type PageSlot, type Panel, type StoryDetail } from "../../lib/api";
+import { Api, type Page, type PageSlot, type Panel, type SlotSubject, type StoryDetail, type Vec2 } from "../../lib/api";
 import { attempt, useApp } from "../../lib/store";
-import { artFrame, autoCrop, findGutters, moveGutter, orderSlots, pageDims, panelSize, polyClip, SLANT_POLY, stripPanels, type Gutter } from "../../lib/layout";
-import { PanelView } from "../../ui/PanelView";
-import { Button, cx, spring } from "../../ui/kit";
+import { artFrame, autoCrop, borderFrac, clampBox, findGutters, moveGutter, orderSlots, pageDims, panelSize, polyClip, slotRect, stripPanels, type Gutter } from "../../lib/layout";
+import { PageBackground, PanelView } from "../../ui/PanelView";
+import { cx, spring } from "../../ui/kit";
 import { CanvasCtx } from "./canvasCtx";
 import { LetteringEditor } from "./LetteringEditor";
 import { useStudio } from "./studioState";
+import { ImportArtButton, importArt, isArtFile } from "./importArt";
 import type { LetteringApi } from "./useLettering";
 
 export const PAGE_BASE = 720; // CSS px width of a page at 100%
@@ -241,6 +242,8 @@ function EditablePanel({
   slotAspect,
   poly,
   className,
+  borderPx,
+  subjectMode,
 }: {
   story: StoryDetail;
   panel: Panel;
@@ -248,6 +251,8 @@ function EditablePanel({
   slotAspect?: number;
   poly?: [number, number][];
   className?: string;
+  borderPx?: number;
+  subjectMode?: SlotSubject;
 }) {
   const selected = useApp((s) => s.panel) === panel.id;
   const { layers, editing, layoutMode, tool } = useStudio();
@@ -264,14 +269,41 @@ function EditablePanel({
       }
     }
   };
+  const [fileOver, setFileOver] = useState(false);
   return (
-    <div className={cx("relative size-full", className)} onPointerDown={select}>
+    <div
+      className={cx("relative size-full", className)}
+      onPointerDown={select}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) {
+          e.preventDefault();
+          e.stopPropagation();
+          setFileOver(true);
+        }
+      }}
+      onDragLeave={() => setFileOver(false)}
+      onDrop={(e) => {
+        setFileOver(false);
+        if (!e.dataTransfer.files.length || !Array.from(e.dataTransfer.files).some(isArtFile)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        useApp.getState().selectPanel(panel.id);
+        void importArt(story.slug, panel.id, e.dataTransfer.files);
+      }}
+    >
+      {fileOver && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-accent/15 ring-2 ring-accent ring-inset">
+          <span className="rounded-full bg-ink px-2.5 py-1 text-[12px] font-medium text-paper">Drop to use your drawing</span>
+        </div>
+      )}
       <PanelView
         slug={story.slug}
         panel={panel}
         story={story}
         slotAspect={slotAspect}
         poly={poly}
+        borderPx={borderPx}
+        subjectMode={subjectMode}
         layers={layers}
         bubbles={selected ? lettering.bubbles : undefined}
         sfx={selected ? lettering.sfx : undefined}
@@ -287,16 +319,19 @@ function EditablePanel({
 function NotDrawn({ story, panel }: { story: StoryDetail; panel: Panel }) {
   const [busy, setBusy] = useState(false);
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-[#f7f7f5] text-center">
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-[#f7f7f5] p-3 text-center">
       <ImageSquare size={22} className="text-ink-3" />
-      <p className="text-[12.5px] text-ink-2">Not drawn yet</p>
-      {panel.plan_error ? (
-        <p className="max-w-[80%] text-[11.5px] text-warn">{panel.plan_error}</p>
-      ) : (
-        <Button
-          size="sm"
-          icon={<Sparkle size={13} />}
-          loading={busy}
+      <p className="text-[12.5px] font-medium text-ink">Drop your sketch or scan here</p>
+      <ImportArtButton
+        slug={story.slug}
+        pid={panel.id}
+        className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-control)] bg-ink px-2.5 text-[12px] font-medium text-paper"
+      />
+      {panel.plan_error ? null : (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-[11.5px] text-ink-2 hover:text-ink disabled:opacity-50"
+          disabled={busy}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={async () => {
             setBusy(true);
@@ -304,8 +339,8 @@ function NotDrawn({ story, panel }: { story: StoryDetail; panel: Panel }) {
             setBusy(false);
           }}
         >
-          Generate
-        </Button>
+          <Sparkle size={12} /> {busy ? "Queuing…" : "Or generate with AI"}
+        </button>
       )}
     </div>
   );
@@ -362,7 +397,7 @@ function Webtoon({ story, lettering }: { story: StoryDetail; lettering: Letterin
 function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail; page: Page; lettering: LetteringApi; onChange: (p: Page) => void }) {
   const { page: pd, live } = pageDims(story.format);
   const height = (PAGE_BASE * pd.height) / pd.width;
-  const { layoutMode } = useStudio();
+  const { layoutMode, slotSel, pickSubject, setSlotSel, setPickSubject } = useStudio();
   const selected = useApp((s) => s.panel);
   const liveRef = useRef<HTMLDivElement>(null);
   const dir = story.format?.direction ?? "rtl";
@@ -373,8 +408,10 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
   // drop local reframes once the server's copy has caught up (or another page is shown)
   const serverCrops = JSON.stringify(story.panels.map((p) => p.crop ?? null));
   useEffect(() => setCropOver({}), [serverCrops, page.id]);
+  useEffect(() => setSlotSel(null), [page.id, setSlotSel]);
   const byId = new Map(story.panels.map((p) => [p.id, cropOver[p.id] ? { ...p, crop: cropOver[p.id] } : p]));
   const [dropAt, setDropAt] = useState<number | null>(null);
+  const setSlot = (i: number, s: PageSlot) => onChange({ ...page, panels: page.panels.map((x, j) => (j === i ? s : x)) });
 
   /** Layout mode: drag the art inside its slot to move the crop's focal point (1:1 with the pointer). */
   const reframe = (e: React.PointerEvent, p: Panel, slotAspect: number) => {
@@ -390,7 +427,9 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
     const overY = ((f.height - 100) / 100) * r.height;
     const start = { x: e.clientX, y: e.clientY, fx: base.x, fy: base.y, scale: base.scale };
     let last = base;
+    let moved = false;
     const move = (ev: PointerEvent) => {
+      moved = true;
       const fx = overX > 0.5 ? Math.min(1, Math.max(0, start.fx - (ev.clientX - start.x) / overX)) : start.fx;
       const fy = overY > 0.5 ? Math.min(1, Math.max(0, start.fy - (ev.clientY - start.y) / overY)) : start.fy;
       last = { x: Math.round(fx * 1000) / 1000, y: Math.round(fy * 1000) / 1000, scale: start.scale };
@@ -400,11 +439,37 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
-      void attempt(() => Api.patchPanel(story.slug, p.id, { crop: last }));
+      if (moved) void attempt(() => Api.patchPanel(story.slug, p.id, { crop: last }));
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
+  };
+
+  /** Waiting for a click on the character: turn the click into a point on the art and cut it out. */
+  const cutOut = async (e: React.PointerEvent, i: number, p: Panel, slotAspect: number) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const { W, H } = panelSize(p, story);
+    const cutout = page.panels[i].subject === "cutout" && !!p.subject;
+    const f = cutout ? artFrame(W / H, slotAspect, p.crop, "contain") : artFrame(W / H, slotAspect, autoCrop(p, W / H, slotAspect));
+    const sx = ((e.clientX - r.left) / r.width) * 100;
+    const sy = ((e.clientY - r.top) / r.height) * 100;
+    const point: Vec2 = [Math.min(1, Math.max(0, (sx - f.left) / f.width)), Math.min(1, Math.max(0, (sy - f.top) / f.height))];
+    setPickSubject(null);
+    const res = await attempt(() => Api.subject(story.slug, p.id, { point }), "Character cut out");
+    if (res) setSlot(i, { ...page.panels[i], subject: page.panels[i].subject ?? "pop" });
+  };
+
+  const onSlotDown = (e: React.PointerEvent, i: number, p: Panel | undefined, slotAspect: number) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+    if (pickSubject === i && p) {
+      e.stopPropagation();
+      void cutOut(e, i, p, slotAspect);
+      return;
+    }
+    setSlotSel(i);
+    if (p) reframe(e, p, slotAspect);
+    else e.stopPropagation();
   };
 
   const assign = (slotIdx: number, pid: string) => {
@@ -415,8 +480,22 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
     onChange({ ...page, panels: slots });
   };
 
+  /** A drawing dropped on an empty slot: a new panel is made for it and placed in the slot. */
+  const dropArtIntoEmpty = async (i: number, files: FileList) => {
+    const name = Array.from(files).find(isArtFile)?.name.replace(/\.[^.]+$/, "") ?? "Drawing";
+    const made = await attempt(() => Api.addPanel(story.slug, { title: name }));
+    if (!made) return;
+    onChange({ ...page, panels: page.panels.map((x, j) => (j === i ? { ...x, panel: made.id } : x)) });
+    useApp.getState().selectPanel(made.id);
+    await importArt(story.slug, made.id, files);
+  };
+
+  const black = page.paper === "black";
+  const sel = layoutMode && slotSel !== null ? page.panels[slotSel] : undefined;
+
   return (
-    <div className="relative bg-paper shadow-[var(--shadow-page)]" style={{ width: PAGE_BASE, height }}>
+    <div className="relative overflow-hidden shadow-[var(--shadow-page)]" style={{ width: PAGE_BASE, height, background: black ? "#0c0c0e" : "var(--color-paper)" }}>
+      <PageBackground story={story} page={page} />
       <div
         ref={liveRef}
         className="absolute"
@@ -425,14 +504,16 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
         {layoutMode && <div className="pointer-events-none absolute -inset-px border border-dashed border-line-2" />}
         {page.panels.map((slot, i) => {
           const p = slot.panel ? byId.get(slot.panel) : undefined;
-          const [bx, by, bw, bh] = slot.box;
+          const [bx, by, bw, bh] = slotRect(slot, story.format);
           const slotAspect = (bw * live.w) / (bh * live.h);
+          const mode = slot.subject && p?.subject && p.pick ? slot.subject : undefined;
+          const picking = pickSubject === i;
           return (
             <div
               key={i}
               className="absolute"
               onDragOver={(e) => {
-                if (e.dataTransfer.types.includes("application/x-panel")) {
+                if (e.dataTransfer.types.includes("application/x-panel") || (!p && e.dataTransfer.types.includes("Files"))) {
                   e.preventDefault();
                   setDropAt(i);
                 }
@@ -442,18 +523,27 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
                 const pid = e.dataTransfer.getData("application/x-panel");
                 setDropAt(null);
                 if (pid) assign(i, pid);
+                else if (!p && Array.from(e.dataTransfer.files).some(isArtFile)) {
+                  e.preventDefault();
+                  void dropArtIntoEmpty(i, e.dataTransfer.files);
+                }
               }}
-              onPointerDownCapture={p && layoutMode ? (e) => reframe(e, p, slotAspect) : undefined}
-              style={{ left: `${bx * 100}%`, top: `${by * 100}%`, width: `${bw * 100}%`, height: `${bh * 100}%`, cursor: layoutMode && p ? "move" : undefined }}
+              onPointerDownCapture={layoutMode ? (e) => onSlotDown(e, i, p, slotAspect) : undefined}
+              style={{ left: `${bx * 100}%`, top: `${by * 100}%`, width: `${bw * 100}%`, height: `${bh * 100}%`, cursor: picking ? "crosshair" : layoutMode && p ? "move" : undefined }}
             >
               {p ? (
-                <EditablePanel story={story} panel={p} lettering={lettering} slotAspect={slotAspect} poly={slot.poly} />
+                <EditablePanel story={story} panel={p} lettering={lettering} slotAspect={slotAspect} poly={slot.poly} borderPx={mode === "cutout" ? 0 : borderFrac(slot.border) * PAGE_BASE} subjectMode={mode} />
               ) : (
                 <div className="flex size-full items-center justify-center border border-dashed border-line-2 bg-[#f7f7f5] text-[12px] text-ink-3" style={{ clipPath: polyClip(slot.poly) }}>
-                  {slot.panel ? `Missing panel ${slot.panel}` : "Drop a panel here"}
+                  {slot.panel ? `Missing panel ${slot.panel}` : "Drop a drawing or a panel here"}
                 </div>
               )}
-              <SelectionRing poly={slot.poly} on={!!p && selected === p.id} />
+              <SelectionRing poly={slot.poly} on={layoutMode ? slotSel === i : !!p && selected === p.id} />
+              {picking && (
+                <div className="pointer-events-none absolute inset-0 flex items-start justify-center bg-accent/10 pt-2 ring-2 ring-accent ring-inset">
+                  <span className="rounded-full bg-ink px-2.5 py-1 text-[11.5px] font-medium text-paper shadow-[var(--shadow-float)]">Click the character</span>
+                </div>
+              )}
               {dropAt === i && <div className="pointer-events-none absolute inset-0 bg-accent/10 ring-2 ring-accent ring-inset" style={{ clipPath: polyClip(slot.poly) }} />}
               <span
                 className={cx(
@@ -463,38 +553,104 @@ function PageSurface({ story, page, lettering, onChange }: { story: StoryDetail;
               >
                 {orderOf.get(i)}
               </span>
-              {layoutMode && <SlotTools slot={slot} onChange={(s) => onChange({ ...page, panels: page.panels.map((x, j) => (j === i ? s : x)) })} />}
             </div>
           );
         })}
         {gutters.map((g, gi) => (
           <GutterHandle key={gi} g={g} liveRef={liveRef} onMove={(pos) => onChange({ ...page, panels: moveGutter(page.panels, g, pos, story.format) })} format={story.format} />
         ))}
+        {sel && slotSel !== null && <SlotHandles slot={sel} rect={slotRect(sel, story.format)} liveRef={liveRef} onChange={(s) => setSlot(slotSel, s)} />}
       </div>
     </div>
   );
 }
 
-function SlotTools({ slot, onChange }: { slot: PageSlot; onChange: (s: PageSlot) => void }) {
+type Edge = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+const EDGES: { k: Edge; x: number; y: number; cursor: string }[] = [
+  { k: "nw", x: 0, y: 0, cursor: "nwse-resize" },
+  { k: "n", x: 0.5, y: 0, cursor: "ns-resize" },
+  { k: "ne", x: 1, y: 0, cursor: "nesw-resize" },
+  { k: "e", x: 1, y: 0.5, cursor: "ew-resize" },
+  { k: "se", x: 1, y: 1, cursor: "nwse-resize" },
+  { k: "s", x: 0.5, y: 1, cursor: "ns-resize" },
+  { k: "sw", x: 0, y: 1, cursor: "nesw-resize" },
+  { k: "w", x: 0, y: 0.5, cursor: "ew-resize" },
+];
+
+/**
+ * Free editing of the selected slot: drag the grip to move it, the square handles to resize it, and the
+ * round handles to move the corners of a custom shape. Overlapping slots are fine: later ones draw on top.
+ */
+function SlotHandles({ slot, rect, liveRef, onChange }: { slot: PageSlot; rect: [number, number, number, number]; liveRef: React.RefObject<HTMLDivElement | null>; onChange: (s: PageSlot) => void }) {
+  const [rx, ry, rw, rh] = rect;
+  const drag = (e: React.PointerEvent, apply: (dx: number, dy: number) => PageSlot) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    const r = liveRef.current!.getBoundingClientRect();
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const move = (ev: PointerEvent) => onChange(apply((ev.clientX - sx) / r.width, (ev.clientY - sy) / r.height));
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  };
+  const [x, y, w, h] = slot.box;
+  const resize = (k: Edge) => (dx: number, dy: number): PageSlot => {
+    let x0 = x;
+    let y0 = y;
+    let x1 = x + w;
+    let y1 = y + h;
+    if (k.includes("w")) x0 = Math.min(x1 - 0.04, x0 + dx);
+    if (k.includes("e")) x1 = Math.max(x0 + 0.04, x1 + dx);
+    if (k.includes("n")) y0 = Math.min(y1 - 0.04, y0 + dy);
+    if (k.includes("s")) y1 = Math.max(y0 + 0.04, y1 + dy);
+    return { ...slot, box: clampBox([x0, y0, x1 - x0, y1 - y0]) };
+  };
+  const r3 = (v: number) => Math.round(v * 1000) / 1000;
   return (
-    <div className="absolute bottom-1.5 left-1/2 flex -translate-x-1/2 gap-1" onPointerDown={(e) => e.stopPropagation()}>
+    <div className="pointer-events-none absolute z-20" style={{ left: `${rx * 100}%`, top: `${ry * 100}%`, width: `${rw * 100}%`, height: `${rh * 100}%` }}>
       <button
-        className={cx(
-          "pressable h-6 rounded-full px-2 text-[11px] font-medium shadow-[var(--shadow-float)]",
-          slot.poly ? "bg-ink text-paper" : "bg-paper text-ink-2 hover:text-ink",
-        )}
-        onClick={() => {
-          const { poly: _p, ...rest } = slot;
-          onChange(slot.poly ? rest : { ...slot, poly: SLANT_POLY });
-        }}
+        type="button"
+        aria-label="Move panel"
+        className="pointer-events-auto absolute -top-7 left-1/2 flex h-5 -translate-x-1/2 cursor-move items-center gap-1 rounded-full bg-accent px-2 text-[10.5px] font-semibold text-white shadow-[var(--shadow-float)]"
+        onPointerDown={(e) => drag(e, (dx, dy) => ({ ...slot, box: clampBox([x + dx, y + dy, w, h]) }))}
       >
-        Slant
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+          <path d="M8 1v14M1 8h14M8 1 5.5 3.5M8 1l2.5 2.5M8 15l-2.5-2.5M8 15l2.5-2.5M1 8l2.5-2.5M1 8l2.5 2.5M15 8l-2.5-2.5M15 8l-2.5 2.5" />
+        </svg>
+        Move
       </button>
-      {slot.panel && (
-        <button className="pressable h-6 rounded-full bg-paper px-2 text-[11px] font-medium text-ink-2 shadow-[var(--shadow-float)] hover:text-ink" onClick={() => onChange({ ...slot, panel: "" })}>
-          Clear
-        </button>
-      )}
+      {EDGES.map((d) => (
+        <span
+          key={d.k}
+          role="presentation"
+          className="pointer-events-auto absolute size-2.5 -translate-x-1/2 -translate-y-1/2 border-[1.5px] border-accent bg-white"
+          style={{ left: `${d.x * 100}%`, top: `${d.y * 100}%`, cursor: d.cursor }}
+          onPointerDown={(e) => drag(e, resize(d.k))}
+        />
+      ))}
+      {slot.poly?.map(([px, py], vi) => (
+        <span
+          key={`v${vi}`}
+          role="presentation"
+          title="Drag the corner"
+          className="pointer-events-auto absolute size-3.5 -translate-x-1/2 -translate-y-1/2 cursor-crosshair rounded-full border-2 border-white bg-accent shadow-[0_0_0_1px_rgb(23_23_26/0.3)]"
+          style={{ left: `${px * 100}%`, top: `${py * 100}%` }}
+          onPointerDown={(e) =>
+            drag(e, (dx, dy) => ({
+              ...slot,
+              poly: slot.poly!.map((q, qi) => (qi === vi ? ([r3(Math.min(1, Math.max(0, px + dx / rw))), r3(Math.min(1, Math.max(0, py + dy / rh)))] as Vec2) : q)),
+            }))
+          }
+        />
+      ))}
     </div>
   );
 }
