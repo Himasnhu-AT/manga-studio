@@ -36,8 +36,8 @@ uv run studio pipeline <slug> [run|status|task|cancel]  # Mode B pipeline (see b
 ```
 
 If `gen` says the server isn't running, start `uv run studio serve` in the background (don't
-use memgate). If the desktop app is open, it already runs one (and the CLI/MCP talk to whichever
-backend holds port 7860).
+use memgate). If the desktop app is open, it already runs one. The CLI/MCP refuse a backend on port
+7860 that saves stories in a different folder (installed app vs. this checkout); quit the other one.
 
 The app finds its backend two ways (app/src-tauri/src/lib.rs): **dev** (`pnpm tauri dev`, any debug
 build, or `MANGA_STUDIO_ROOT` set) runs `uv run studio serve` in this repo, data in `stories/` and
@@ -53,11 +53,17 @@ When `manga-studio` MCP tools are available (registered with
 the same running backend the app uses, and `view_image` hands you the picture directly. Tools:
 `list_projects`, `get_project`, `create_project`, `update_story`, `update_panel`, `add_panel`,
 `set_cast`, `prompt_preview`, `generate`, `copilot`, `segment`, `edit_image`, `view_image`, `jobs`, `get_feedback`,
-`resolve_note`, `pick_version`, `auto_letter`, `set_pages`, `auto_layout`, `export`, `pipeline_new`, `pipeline_status`,
+`resolve_note`, `pick_version`, `auto_letter`, `set_pages`, `cut_out_character`, `refine_sketch`, `auto_layout`, `export`, `pipeline_new`, `pipeline_status`,
 `pipeline_run`, `pipeline_task`, `pipeline_submit`.
 
 Use the CLI (and Read on PNG paths) when MCP isn't connected, for `video`/`compose`, or when you need
 to edit story.yaml text by hand (long folded actions, comments).
+
+## Hand-drawn work
+
+The artist may draw the panels themselves: imported art (`/panels/<pid>/import`, scanned pages via
+`/pages/scan`) and layers drawn in Draw mode are theirs. Don't regenerate over them; improve them with
+`refine_sketch` (it follows their lines) and let them pick. Merge a panel's drawing layers before refining.
 
 ## Working alongside the user
 
@@ -130,6 +136,8 @@ blocks: {style: ..., setting: ...}   # blocks[<cast id>] if present wins over th
 avoid: "t-shirt, navy hair, any text"
 pages:                      # page mode layout; boxes are fractions of the live area
   - {id: pg1, panels: [{panel: p01, box: [0, 0, 1, 0.32]}, {panel: p02, box: [0, 0.34, 0.49, 0.3], poly: [[0,0],[1,0],[1,0.85],[0,1]]}]}
+  # manga page devices: page {paper: black, background: {panel: p06, opacity: 0.35}}; slot {border: bold|thin|none,
+  # bleed: true, subject: pop|cutout (needs POST /panels/<pid>/subject first)}; later slots overlap earlier ones
 panels:
   - id: sheet               # reference panel: strip: false, other panels use it via refs: [sheet]
     strip: false
@@ -144,6 +152,7 @@ panels:
     crop: {x: 0.5, y: 0.5, scale: 1.0}      # art framing inside a page slot
     layers: {fx: {items: [{type: screentone, density: 0.5, opacity: 0.25, angle: 45}]}}  # screentone|speedlines|focuslines
     protect: [[0.3, 0.2, 0.25, 0.25]]       # faces: auto-lettering keeps bubbles off these boxes
+    stage: pencils          # name|pencils|inks|blacks|tone|finish|letters; drawing: [{id, name, opacity}] = hand-drawn layers
     bubbles:                # coordinates are fractions of the panel
       - {id: b1, text: "Hi!", at: [0.7, 0.1], w: 0.4, tail: [0.62, 0.3], style: speech, vertical: false}   # speech|shout|thought|caption
     sfx:

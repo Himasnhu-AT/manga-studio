@@ -13,6 +13,8 @@ import {
   MagicWand,
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
+  PencilSimple,
+  Scroll,
   SidebarSimple,
   Stack,
   TextT,
@@ -54,28 +56,36 @@ const LAYERS: { k: keyof LayerToggles; label: string }[] = [
   { k: "lettering", label: "Lettering" },
 ];
 
-type StudioMode = "letter" | "layout" | "edit";
+type StudioMode = "draw" | "letter" | "layout" | "edit";
 
-/** One obvious switch for what the canvas is doing: lettering, page layout, or editing the picture itself. */
+/** One obvious switch for what the canvas is doing: drawing, lettering, page layout, or editing the picture. */
 export function ModeSwitch({ pageMode, canEdit }: { pageMode: boolean; canEdit: boolean }) {
-  const { layoutMode, editImage, setLayoutMode, setEditImage } = useStudio();
-  const mode: StudioMode = editImage ? "edit" : layoutMode ? "layout" : "letter";
+  const { layoutMode, editImage, draw, setLayoutMode, setEditImage, setDraw } = useStudio();
+  const hasPanel = useApp((s) => !!s.panel);
+  const mode: StudioMode = draw ? "draw" : editImage ? "edit" : layoutMode ? "layout" : "letter";
   const set = (m: StudioMode) => {
     if (m === "edit" && !canEdit) {
       useApp.getState().toast("Select a panel that has a picture to edit it", "info");
       return;
     }
-    if (m === "edit") setEditImage(true);
+    if (m === "draw" && !hasPanel) {
+      useApp.getState().toast("Select a panel to draw on it", "info");
+      return;
+    }
+    if (m === "draw") setDraw(true);
+    else if (m === "edit") setEditImage(true);
     else if (m === "layout") setLayoutMode(true);
     else {
+      setDraw(false);
       setEditImage(false);
       setLayoutMode(false);
     }
   };
   const opts: { value: StudioMode; label: React.ReactNode; title: string }[] = [
-    { value: "letter", label: <><ChatCircle size={14} />Letter</>, title: "Bubbles and sound effects" },
-    ...(pageMode ? [{ value: "layout" as const, label: <><Layout size={14} />Layout</>, title: "Page slots, gutters and framing" }] : []),
-    { value: "edit", label: <><MagicWand size={14} />Edit image</>, title: "Select, move, erase and fix the picture" },
+    { value: "draw", label: <><PencilSimple size={14} /><span className="@max-[1000px]:hidden">Draw</span></>, title: "Blue pencil, pens and layers on the selected panel" },
+    { value: "letter", label: <><ChatCircle size={14} /><span className="@max-[1000px]:hidden">Letter</span></>, title: "Bubbles and sound effects" },
+    ...(pageMode ? [{ value: "layout" as const, label: <><Layout size={14} /><span className="@max-[1000px]:hidden">Layout</span></>, title: "Page slots, gutters and framing" }] : []),
+    { value: "edit", label: <><MagicWand size={14} /><span className="@max-[1000px]:hidden">Edit image</span></>, title: "Select, move, erase and fix the picture" },
   ];
   return <Segmented<StudioMode> value={mode} onChange={set} options={opts} />;
 }
@@ -175,10 +185,13 @@ export function TemplateBar({ onApply }: { onApply: (t: TemplateId) => void }) {
   );
 }
 
-export function ActionBar({ onLetter, letterBusy, onCast, onExport, castCount }: { onLetter: () => void; letterBusy: boolean; onCast: () => void; onExport: () => void; castCount: number }) {
+export function ActionBar({ onLetter, letterBusy, onCast, onExport, onScript, castCount }: { onLetter: () => void; letterBusy: boolean; onCast: () => void; onExport: () => void; onScript: () => void; castCount: number }) {
   const { inspector, setInspector } = useStudio();
   return (
     <div className="material pointer-events-auto flex items-center gap-0.5 rounded-[var(--radius-surface)] border border-line p-1 shadow-[var(--shadow-float)]">
+      <Button size="sm" variant="ghost" icon={<Scroll size={15} />} onClick={onScript} title="Story editor: every line of dialogue in reading order">
+        <span className="@max-[980px]:hidden">Script</span>
+      </Button>
       <Button size="sm" variant="ghost" icon={<ChatText size={15} />} loading={letterBusy} onClick={onLetter} title="Auto-letter: place speech bubbles away from faces">
         <span className="@max-[980px]:hidden">Auto-letter</span>
       </Button>

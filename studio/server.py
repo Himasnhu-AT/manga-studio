@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from studio import appsvc, compose, export as exporter, imageedit, lettering, project as pj, story as st
+from studio import appsvc, compose, drawing, export as exporter, imageedit, lettering, project as pj, story as st
 from studio.engine import make_engine
 
 DASHBOARD = st.ROOT / "dashboard" / "index.html"
@@ -164,7 +164,8 @@ def app_assets(path: str):
 
 @app.get("/api/status")
 def status():
-    return {"rev": _rev, **engine.status(), "queued": sum(j["status"] == "queued" for j in list(jobs.values()))}
+    return {"rev": _rev, **engine.status(), "queued": sum(j["status"] == "queued" for j in list(jobs.values())),
+            "stories": str(st.STORIES)}
 
 
 @app.get("/api/stories")
@@ -217,6 +218,8 @@ def story_detail(slug: str):
                 "pick": st.picked_version(s, p["id"]),
                 "explicit_pick": state["picks"].get(p["id"]),
                 "final": _mtime(s.dir / "final" / f"{p['id']}.png"),
+                "subject": _subject_url(s, p["id"]),
+                "drawing_files": {lp.stem: _mtime(lp) for _, lp in drawing.layers(s.dir, p)},
             }
         )
     return {
@@ -236,6 +239,12 @@ def story_detail(slug: str):
         "has_source": (s.dir / "source.md").exists(),
         "pipeline": _pipeline_summary(s),
     }
+
+
+def _subject_url(s: st.Story, pid: str) -> str | None:
+    """Cut-out mask of the picked version, with its mtime so a redo busts the browser cache."""
+    rel = exporter.subject_rel(s, pid)
+    return f"{rel}?v={_mtime(s.dir / rel)}" if rel else None
 
 
 def _pipeline_summary(s: st.Story) -> dict | None:
@@ -443,10 +452,12 @@ async def events():
 
 # ---- v0.2: projects + editing ----------------------------------------------
 
+STAGES = ("name", "pencils", "inks", "blacks", "tone", "finish", "letters")  # traditional production order
 PANEL_KEYS = {
     "title", "action", "refs", "use", "cast", "bubbles", "sfx", "layers", "crop", "protect",
     "seed", "strength", "strip", "width", "height", "ref_label", "avoid", "steps", "output_resolution",
     "camera", "source_span", "beat", "location",  # written by the pipeline; editable from the UI
+    "drawing", "stage",  # hand-drawn layers (studio/drawing.py) and the production stage
 }
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -655,12 +666,30 @@ def put_pages(slug: str, req: PagesReq):
     for pg in req.pages:
         if not pg.get("id"):
             raise HTTPException(400, "every page needs an id")
+        where = f"page {pg['id']}"
+        bg = pg.get("background")
+        if bg is not None:
+            if not isinstance(bg, dict) or bg.get("panel") not in ids:
+                raise HTTPException(400, f"{where}: background needs a known panel")
+            op = bg.get("opacity", 0.35)
+            if not isinstance(op, (int, float)) or not 0 <= op <= 1:
+                raise HTTPException(400, f"{where}: background opacity is 0..1")
+        if pg.get("paper", "white") not in exporter.PAPERS:
+            raise HTTPException(400, f"{where}: paper is white or black")
         for sl in pg.get("panels") or []:
-            if sl.get("panel") not in ids:
-                raise HTTPException(400, f"page {pg['id']}: unknown panel {sl.get('panel')!r}")
+            pid = sl.get("panel", "")
+            if pid != "" and pid not in ids:  # "" is an empty slot waiting for a panel
+                raise HTTPException(400, f"{where}: unknown panel {pid!r}")
             box = sl.get("box")
-            if not (isinstance(box, list) and len(box) == 4):
-                raise HTTPException(400, f"page {pg['id']}: panel {sl['panel']} needs box [x, y, w, h]")
+            if not (isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box)):
+                raise HTTPException(400, f"{where}: panel {pid or '(empty)'} needs box [x, y, w, h]")
+            if sl.get("border", "normal") not in exporter.BORDERS:
+                raise HTTPException(400, f"{where}: border is one of {', '.join(exporter.BORDERS)}")
+            if sl.get("subject") not in (None, *exporter.SUBJECTS):
+                raise HTTPException(400, f"{where}: subject is pop or cutout")
+            poly = sl.get("poly")
+            if poly is not None and not (isinstance(poly, list) and len(poly) >= 3 and all(isinstance(v, list) and len(v) == 2 for v in poly)):
+                raise HTTPException(400, f"{where}: poly is a list of at least 3 [x, y] points")
     with _edit(slug) as data:
         data["pages"] = pj.from_plain(req.pages)
     bump()
@@ -739,6 +768,265 @@ async def upload_ref(slug: str, file: UploadFile = File(...)):
     return {"name": dest.name}
 
 
+# ---- your own art: import a drawing as a panel version --------------------------------
+
+ART_EXT = IMAGE_EXT | {".psd", ".tif", ".tiff", ".bmp"}
+ART_MAX_SIDE = 3200  # scans at 600 dpi are huge; this keeps line work crisp and the model happy
+
+
+def _read_art(data: bytes):
+    """Any image (PSD flattened) -> RGB on white paper, at most ART_MAX_SIDE on the long side."""
+    from PIL import Image
+
+    try:
+        im = Image.open(io.BytesIO(data))
+        im.load()
+    except Exception:
+        raise HTTPException(400, "that file isn't a readable image")
+    if im.mode in ("RGBA", "LA", "PA") or (im.mode == "P" and "transparency" in im.info):
+        im = im.convert("RGBA")
+        paper = Image.new("RGBA", im.size, (255, 255, 255, 255))
+        paper.alpha_composite(im)
+        im = paper
+    im = im.convert("RGB")
+    if max(im.size) > ART_MAX_SIDE:
+        im.thumbnail((ART_MAX_SIDE, ART_MAX_SIDE), Image.LANCZOS)
+    return im
+
+
+def save_art_version(s: st.Story, pid: str, img, meta: dict, pick: bool = True) -> str:
+    """Write `img` as the panel's next version (seed 0) with a .json saying where it came from; pick it."""
+    out = st.next_version_name(s, pid, 0)
+    img.save(out)
+    full = {"seed": 0, "width": img.width, "height": img.height, "engine": "import", "created": time.strftime("%Y-%m-%d %H:%M:%S"), **meta}
+    out.with_suffix(".json").write_text(json.dumps(full, indent=2))
+    if pick:
+        st.update_state(s, lambda state: state["picks"].__setitem__(pid, out.name))
+    bump()
+    return out.name
+
+
+@app.post("/api/stories/{slug}/panels/{pid}/import")
+async def import_art(slug: str, pid: str, file: UploadFile = File(...)):
+    """Your drawing (sketch, scan, inks, finished art) becomes a new version of the panel and is put in use.
+    Nothing is generated. PNG, JPG, WebP, PSD (flattened), TIFF, BMP."""
+    s = _edit_panel_story(slug, pid)
+    name = Path(file.filename or "art.png").name
+    if Path(name).suffix.lower() not in ART_EXT:
+        raise HTTPException(400, f"images only ({', '.join(sorted(ART_EXT))})")
+    img = _read_art(await file.read())
+    return {"file": save_art_version(s, pid, img, {"imported": name})}
+
+
+# ---- scanned pages: a whole hand-drawn page in, panels and a page layout out -----------
+
+
+@app.post("/api/stories/{slug}/pages/scan")
+async def scan_page(slug: str, file: UploadFile = File(...)):
+    """Keep a scanned / exported page in scans/ and find its panels. Nothing is created yet: the artist
+    reviews the boxes, then POST .../pages/scan/apply."""
+    from studio import pagescan
+
+    s = _story(slug)
+    name = Path(file.filename or "page.png").name
+    if Path(name).suffix.lower() not in ART_EXT:
+        raise HTTPException(400, f"images only ({', '.join(sorted(ART_EXT))})")
+    img = _read_art(await file.read())
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "-", Path(name).stem).strip("-")[:60] or "page"
+    dest = s.dir / "scans" / f"{stem}.png"
+    n = 2
+    while dest.exists():
+        dest = s.dir / "scans" / f"{stem}-{n}.png"
+        n += 1
+    dest.parent.mkdir(exist_ok=True)
+    img.save(dest)
+    rtl = s.format.get("direction", "rtl") == "rtl"
+    return {"scan": f"scans/{dest.name}", "size": list(img.size), "panels": pagescan.detect_panels(img, rtl)}
+
+
+class ScanApplyReq(BaseModel):
+    scan: str  # scans/<name>.png from /pages/scan
+    boxes: list[list[float]]  # [x, y, w, h] fractions of the scan, in reading order
+    stage: str | None = None  # e.g. pencils, inks, finish
+    title: str | None = None
+
+
+@app.post("/api/stories/{slug}/pages/scan/apply")
+def apply_scan(slug: str, req: ScanApplyReq):
+    """One panel per box (its crop of the scan is version 1, in use) and a new page that places them where
+    they were drawn. Boxes past the margins become bleed slots."""
+    from PIL import Image
+
+    s = _story(slug)
+    src = (s.dir / req.scan).resolve()
+    if not src.is_relative_to((s.dir / "scans").resolve()) or not src.is_file():
+        raise HTTPException(400, "unknown scan; upload it with /pages/scan first")
+    if not req.boxes or len(req.boxes) > 20:
+        raise HTTPException(400, "send 1 to 20 boxes")
+    if any(len(b) != 4 or b[2] <= 0.01 or b[3] <= 0.01 for b in req.boxes):
+        raise HTTPException(400, "each box is [x, y, w, h] fractions with some size")
+    if req.stage is not None and req.stage not in STAGES:
+        raise HTTPException(400, f"stage is one of {', '.join(STAGES)}")
+    scan = Image.open(src).convert("RGB")
+    W, H = scan.size
+    f = s.format
+    pw, ph = f["page"]["width"], f["page"]["height"]
+    mx = float(f.get("margin", 0.06))
+    my = mx * pw / ph
+    label = req.title or src.stem.replace("-", " ")
+    with _edit(slug) as data:
+        panels = data.get("panels")
+        if panels is None:
+            data["panels"] = panels = pj.from_plain([])
+        pages = data.get("pages")
+        if pages is None:
+            data["pages"] = pages = pj.from_plain([])
+        made, slots = [], []
+        for k, (x, y, w, h) in enumerate(req.boxes, 1):
+            pid = _next_pid(data)
+            entry = {"id": pid, "title": f"{label} {k}", "refs": [], "use": [], "action": ""}
+            if req.stage:
+                entry["stage"] = req.stage
+            panels.append(pj.from_plain(entry))
+            made.append(pid)
+            # scan fractions -> live-area fractions; anything past the margin bleeds off the page
+            lx0, ly0 = (x - mx) / (1 - 2 * mx), (y - my) / (1 - 2 * my)
+            lx1, ly1 = (x + w - mx) / (1 - 2 * mx), (y + h - my) / (1 - 2 * my)
+            bleed = lx0 < -0.01 or ly0 < -0.01 or lx1 > 1.01 or ly1 > 1.01
+            lx0, ly0, lx1, ly1 = max(0.0, lx0), max(0.0, ly0), min(1.0, lx1), min(1.0, ly1)
+            # the crop already holds the artist's own frame line, so the slot draws none
+            slot = {"panel": pid, "box": [round(lx0, 4), round(ly0, 4), round(lx1 - lx0, 4), round(ly1 - ly0, 4)], "border": "none"}
+            if bleed:
+                slot["bleed"] = True
+            slots.append(slot)
+        ids = {str(pg.get("id")) for pg in pages}
+        n = len(pages) + 1
+        while f"pg{n}" in ids:
+            n += 1
+        page_id = f"pg{n}"
+        pages.append(pj.from_plain({"id": page_id, "panels": slots}))
+    s = st.load(slug)
+    for pid, (x, y, w, h) in zip(made, req.boxes):
+        box = (max(0, round(x * W)), max(0, round(y * H)), min(W, round((x + w) * W)), min(H, round((y + h) * H)))
+        save_art_version(s, pid, scan.crop(box), {"imported": req.scan, "scan_box": [x, y, w, h]})
+    bump()
+    return {"page": page_id, "panels": made}
+
+
+# ---- drawing layers: the artist's own strokes ---------------------------------------
+
+
+class LayerReq(BaseModel):
+    png: str  # data URL of the layer canvas (RGBA)
+
+
+@app.put("/api/stories/{slug}/panels/{pid}/drawing/{lid}")
+def put_layer(slug: str, pid: str, lid: str, req: LayerReq):
+    """Save one drawing layer's pixels. The layer list (names, order, opacity) is the panel's `drawing` key."""
+    s = _edit_panel_story(slug, pid)
+    try:
+        drawing.save_layer(s.dir, pid, lid, req.png)
+    except drawing.DrawingError as e:
+        raise HTTPException(400, str(e))
+    bump()
+    return {"ok": True}
+
+
+@app.delete("/api/stories/{slug}/panels/{pid}/drawing/{lid}")
+def delete_layer(slug: str, pid: str, lid: str):
+    s = _edit_panel_story(slug, pid)
+    try:
+        drawing.layer_path(s.dir, pid, lid).unlink(missing_ok=True)
+    except drawing.DrawingError as e:
+        raise HTTPException(400, str(e))
+    bump()
+    return {"ok": True}
+
+
+@app.post("/api/stories/{slug}/panels/{pid}/drawing/merge")
+def merge_drawing(slug: str, pid: str):
+    """Bake the visible layers into a new version (over the version in use, or white paper) and clear them,
+    so Refine, edits and the model see the drawing. The new version is put in use."""
+    from PIL import Image
+
+    s = _edit_panel_story(slug, pid)
+    panel = s.panel(pid)
+    drawn = drawing.layers(s.dir, panel)
+    if not drawn:
+        raise HTTPException(400, "nothing drawn on this panel yet")
+    v = st.picked_version(s, pid)
+    base = Image.open(s.dir / "out" / pid / v).convert("RGBA") if v else Image.new("RGBA", drawing.size(s.dir, panel), (255, 255, 255, 255))
+    img = drawing.composite(s.dir, panel, base).convert("RGB")
+    f = save_art_version(s, pid, img, {"engine": "drawing", "drawn_on": v, "layers": [spec.get("name") or spec.get("id") for spec, _ in drawn]})
+    for _, p in drawn:
+        p.unlink(missing_ok=True)
+    bump()
+    return {"file": f}
+
+
+# ---- refine sketch: your drawing in, a cleaner stage out ------------------------------
+
+KEEP = "Keep every pose, proportion, expression, panel composition and line placement exactly as drawn."
+# Past this strength the drawing is a layout guide, not line work to trace: a quick rough plus a few words
+# becomes a properly drawn panel in the same pose and composition (the slider says "May redraw the pose").
+GUIDE_FROM = 0.75
+GUIDE = ("Use the drawing as a rough layout guide only: keep its pose, composition, framing and where everything is, "
+         "but redraw it properly with correct anatomy, full detail in faces, hair, hands and clothes, and clean professional line work.")
+REFINE_PRESETS = {
+    "clean": {"strength": 0.45, "label": "Clean lines", "prompt": f"Clean up this rough pencil sketch into crisp, clean black line art on white paper. Remove construction lines and blue pencil. {KEEP} No color, no shading, no screentone."},
+    "inks": {"strength": 0.55, "label": "Inks", "prompt": f"Ink this sketch as finished manga line art: confident black pen lines with varied line weight, solid black fills for dark hair and deep shadows, white paper. {KEEP} No color, no screentone."},
+    "tone": {"strength": 0.6, "label": "Inks + tone", "prompt": f"Finish this sketch as a printed black-and-white manga panel: clean inked lines, solid blacks and dot screentone shading. {KEEP} No color."},
+    "color": {"strength": 0.7, "label": "Full color", "prompt": f"Render this sketch as a finished full-color illustration with clean line art and soft cel shading, in the story's style. {KEEP}"},
+}
+
+
+def _render_size(src_path: Path, s: st.Story) -> tuple[int, int]:
+    """The drawing's shape at the story's usual pixel count, in multiples of 32 as Qwen-Image requires (a 3000 px
+    scan would not fit in memory)."""
+    from PIL import Image
+
+    d = s.settings()
+    area = int(d.get("width", 864)) * int(d.get("height", 1152))
+    with Image.open(src_path) as im:
+        aspect = im.width / im.height
+    w = (area * aspect) ** 0.5
+    return max(256, round(w / 32) * 32), max(256, round(w / aspect / 32) * 32)
+
+
+class RefineReq(BaseModel):
+    preset: str = "inks"
+    strength: float | None = None  # lower keeps more of the drawing
+    count: int = 3
+    source: str | None = None  # version to refine (default: the one in use)
+    prompt: str | None = None  # extra direction
+
+
+@app.post("/api/stories/{slug}/panels/{pid}/refine")
+def refine_sketch(slug: str, pid: str, req: RefineReq):
+    """Turn the artist's drawing into clean lines, inks, toned inks or color, keeping their composition.
+    Each result is a new version (meta: refine, source); the drawing itself is never changed."""
+    if req.preset not in REFINE_PRESETS:
+        raise HTTPException(400, f"preset is one of {', '.join(REFINE_PRESETS)}")
+    s = _edit_panel_story(slug, pid)
+    src, path = _version_path(s, pid, req.source)
+    pr = REFINE_PRESETS[req.preset]
+    strength = max(0.2, min(1.0, req.strength if req.strength is not None else pr["strength"]))
+    loose = strength >= GUIDE_FROM
+    if loose:
+        strength = 1.0  # the model edits its source below 1.0; drawing *from* the layout needs a fresh render
+    prompt = pr["prompt"].replace(KEEP, GUIDE) if loose else pr["prompt"]
+    prompt += f" {req.prompt.strip()}" if req.prompt and req.prompt.strip() else ""
+    try:
+        created, seeds = queue_from_source(
+            slug, pid, src, "img2img", prompt, strength, max(1, min(4, req.count)),
+            meta={"refine": req.preset}, size=_render_size(path, s),
+            source_label="the artist's rough drawing of this panel: follow its layout and pose" if loose else "the artist's own drawing of this panel: follow it exactly",
+        )
+    except st.StoryError as e:
+        raise HTTPException(400, str(e))
+    return {"jobs": created, "seeds": seeds, "source": src, "strength": strength}
+
+
 # ---- copilot ---------------------------------------------------------------
 
 
@@ -800,23 +1088,22 @@ def _version_path(s: st.Story, pid: str, name: str | None) -> tuple[str, Path]:
     return name, s.dir / "out" / pid / name
 
 
-def queue_from_source(slug: str, pid: str, src: str, mode: str, prompt: str | None, strength: float, count: int, mask=None, meta: dict | None = None, fit_source: bool = False) -> tuple[list[int], list[int]]:
+def queue_from_source(slug: str, pid: str, src: str, mode: str, prompt: str | None, strength: float, count: int, mask=None, meta: dict | None = None, fit_source: bool = False, size: tuple[int, int] | None = None, source_label: str | None = None) -> tuple[list[int], list[int]]:
     """img2img / inpaint jobs that start from one version. The panel's own blocks, cast and refs are kept
     (the source goes in as image 1), so characters stay on model. `mask` (PIL L, white = repaint) makes it an
     inpaint: only that region changes. `fit_source` renders at the source's size (crops, extends)."""
     s = st.load(slug)
     panel = s.panel(pid)
     src_path = s.dir / "out" / pid / src
-    size = None
-    if fit_source:
+    if fit_source and size is None:
         from PIL import Image
 
         with Image.open(src_path) as im:
             f = max(1.0, 256 / min(im.size))  # tiny sources render at >= 256px, same aspect
-            size = (round(im.width * f / 16) * 16, round(im.height * f / 16) * 16)
+            size = (round(im.width * f / 32) * 32, round(im.height * f / 32) * 32)  # Qwen-Image needs multiples of 32
 
     def mutate(plan):
-        first = {"name": f"{pid}/{src}", "path": str(src_path), "version": src, "label": "the current panel, keep its composition and characters"}
+        first = {"name": f"{pid}/{src}", "path": str(src_path), "version": src, "label": source_label or "the current panel, keep its composition and characters"}
         refs = [first] + [r for r in plan["refs"] if r["path"] != str(src_path)]
         plan["refs"] = refs[:10]
         plan["prompt"] = _with_instruction(s.build_prompt(panel, plan["refs"]), prompt)
@@ -866,6 +1153,60 @@ def copilot(slug: str, pid: str, req: CopilotReq):
     except st.StoryError as e:
         raise HTTPException(400, str(e))
     return {"jobs": created, "seeds": seeds}
+
+
+# ---- cut-out character (page devices: pop out of the frame, float with no frame) -----
+
+
+class SubjectReq(BaseModel):
+    point: list[float] | None = None  # click on the character (fractions); none = every foreground figure
+    clear: bool = False
+
+
+@app.post("/api/stories/{slug}/panels/{pid}/subject")
+def panel_subject(slug: str, pid: str, req: SubjectReq):
+    """Make (or clear) the cut-out mask of the panel's picked version: an alpha PNG in out/<pid>/masks/.
+    Pages use it for `subject: pop | cutout`. Apple Vision finds the figure; without Vision a click is needed."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    from studio import segment as seg
+
+    s = _edit_panel_story(slug, pid)
+    name, path = _version_path(s, pid, None)
+    out = s.dir / "out" / pid / "masks" / f"subject-{Path(name).stem}.png"
+    if req.clear:
+        out.unlink(missing_ok=True)
+        bump()
+        return {"subject": None, "method": None, "area": 0.0}
+    img = Image.open(path).convert("RGB")
+    key = f"{path}:{path.stat().st_mtime_ns}"
+    method = "vision"
+    if req.point is not None:
+        if len(req.point) != 2:
+            raise HTTPException(400, "point is [x, y] fractions")
+        try:
+            r = seg.segment(img, (req.point[0], req.point[1]), "auto", key=key)
+        except RuntimeError as e:
+            raise HTTPException(400, str(e))
+        m = np.asarray(r["mask"]) > 127
+        method = r["method"]
+    else:
+        if not seg.vision_available():
+            raise HTTPException(400, "Click the character to cut it out (automatic finding needs Apple Vision, macOS 14+)")
+        try:
+            m = seg.vision_labels(img, key) > 0
+        except Exception as e:
+            raise HTTPException(400, f"Couldn't find a figure: {e}")
+    if not m.any():
+        raise HTTPException(400, "No character found there. Click on the character.")
+    a = Image.fromarray(np.where(m, 255, 0).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2))  # soft edge
+    rgba = Image.new("RGBA", img.size, (255, 255, 255, 0))
+    rgba.putalpha(a)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    rgba.save(out)
+    bump()
+    return {"subject": _subject_url(s, pid), "method": method, "area": round(float(m.mean()), 4)}
 
 
 # ---- image editing (segment, rearrange, erase, fix, extend) -------------------------

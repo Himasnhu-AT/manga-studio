@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { Api, type Settings as SettingsT } from "./lib/api";
 import { useLive } from "./lib/live";
 import { useApp, type View } from "./lib/store";
-import { IconButton, Segmented, Toasts, cx } from "./ui/kit";
+import { Button, ErrorBoundary, IconButton, Segmented, Toasts, cx } from "./ui/kit";
 import { EngineStatus } from "./ui/EngineStatus";
 import { BackendBanner } from "./ui/BackendBanner";
 import { Library } from "./views/Library";
@@ -99,11 +99,27 @@ export function App() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.14, ease: [0.23, 1, 0.32, 1] }}
           >
-            {view === "library" && <Library />}
-            {view === "settings" && <Settings />}
-            {view === "studio" && slug && <Studio />}
-            {view === "pipeline" && slug && <Pipeline />}
-            {view === "reader" && slug && <Reader />}
+            <ErrorBoundary
+              resetKey={view + (slug ?? "")}
+              fallback={(e, retry) => (
+                <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+                  <p className="text-[15px] font-semibold">Something broke on this screen</p>
+                  <p className="selectable max-w-lg text-[12.5px] text-ink-2">{e.message}</p>
+                  <div className="flex gap-2">
+                    <Button onClick={retry}>Try again</Button>
+                    <Button variant="primary" onClick={() => go("library")}>
+                      All projects
+                    </Button>
+                  </div>
+                </div>
+              )}
+            >
+              {view === "library" && <Library />}
+              {view === "settings" && <Settings />}
+              {view === "studio" && slug && <Studio />}
+              {view === "pipeline" && slug && <Pipeline />}
+              {view === "reader" && slug && <Reader />}
+            </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </main>

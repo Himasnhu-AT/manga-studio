@@ -1,15 +1,32 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ArrowLeft, ArrowRight, Check, Columns, MagicWand, Star, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, Check, Columns, MagicWand, Star, UploadSimple, X } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { Api, versionUrl, type Panel, type StoryDetail } from "../../lib/api";
 import { attempt } from "../../lib/store";
 import { Button, IconButton, Kbd, Portal, cx, spring } from "../../ui/kit";
+import { ImportArtButton } from "./importArt";
 
 /** Horizontal strip of a panel's versions. Click opens the lightbox. */
 export function Versions({ story, panel, onUseSource }: { story: StoryDetail; panel: Panel; onUseSource: (file: string) => void }) {
   const [open, setOpen] = useState<number | null>(null);
   const vs = panel.versions;
-  if (!vs.length) return <p className="text-[12.5px] text-ink-2">No versions yet. Generate to make the first one.</p>;
+  const importTile = (
+    <ImportArtButton
+      slug={story.slug}
+      pid={panel.id}
+      className="flex h-[84px] w-[63px] shrink-0 flex-col items-center justify-center gap-1 rounded-[6px] border border-dashed border-line-2 text-[11px] font-medium text-ink-2 hover:border-ink-3 hover:text-ink"
+    >
+      <UploadSimple size={15} />
+      Import
+    </ImportArtButton>
+  );
+  if (!vs.length)
+    return (
+      <div className="flex items-center gap-3">
+        {importTile}
+        <p className="text-[12.5px] text-ink-2">No versions yet. Import your drawing, or generate one.</p>
+      </div>
+    );
   return (
     <>
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
@@ -33,6 +50,7 @@ export function Versions({ story, panel, onUseSource }: { story: StoryDetail; pa
             </button>
           );
         })}
+        {importTile}
       </div>
       <Lightbox story={story} panel={panel} index={open} setIndex={setOpen} onUseSource={onUseSource} />
     </>

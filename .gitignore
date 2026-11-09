@@ -1,6 +1,10 @@
 .venv/
 .cache/
 __pycache__/
+# Only the sample story belongs in the repo (and in the app bundle). Your own stories live in
+# ~/Manga Studio/stories (installed app) or here while developing, never committed.
+stories/*
+!stories/cheek-squish/
 stories/*/out/
 stories/*/final/
 stories/*/state.json

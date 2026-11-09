@@ -17,6 +17,8 @@ from typing import Any
 import httpx
 from mcp.server.mcpserver import Image, MCPServer
 
+from studio.story import backend_mismatch
+
 URL = os.environ.get("STUDIO_URL", "http://127.0.0.1:7860").rstrip("/")
 
 INSTRUCTIONS = """manga-studio makes consistent manga/webtoon pages with Qwen-Image-2.1 running locally. You write
@@ -56,11 +58,33 @@ class StudioOffline(RuntimeError):
     pass
 
 
+_checked = False
+
+
+def _check_backend() -> None:
+    """Refuse to work through a backend that saves stories somewhere else (checked once per backend)."""
+    global _checked
+    if _checked:
+        return
+    try:
+        status = httpx.get(URL + "/api/status", timeout=httpx.Timeout(10, connect=3)).json()
+    except httpx.ConnectError as e:
+        raise StudioOffline(f"The manga-studio backend isn't running at {URL}. Open the Manga Studio app, or start it with `uv run studio serve`.") from e
+    except (httpx.HTTPError, ValueError):
+        return
+    if why := backend_mismatch(status):
+        raise RuntimeError(f"Wrong backend at {URL}: {why}")
+    _checked = True
+
+
 def _api(method: str, path: str, **kw) -> Any:
+    _check_backend()
     try:
         kw.setdefault("timeout", httpx.Timeout(60, connect=3))
         r = httpx.request(method, URL + path, **kw)
     except httpx.ConnectError as e:
+        global _checked
+        _checked = False  # the backend went away; check whichever one comes back
         raise StudioOffline(f"The manga-studio backend isn't running at {URL}. Open the Manga Studio app, or start it with `uv run studio serve`.") from e
     if r.status_code >= 400:
         try:
@@ -138,8 +162,38 @@ def update_story(story: str, changes: dict) -> dict:
 def set_pages(story: str, pages: list[dict]) -> dict:
     """Lay out page mode by hand. pages: [{id: "pg1", panels: [{panel: "p01", box: [x, y, w, h]}, ...]}];
     boxes are fractions of the page's live area. Match a slot's shape to its art (a 3:4 panel in a wide
-    slot gets cropped to a strip); in RTL the first panel goes top right."""
+    slot gets cropped to a strip); in RTL the first panel goes top right.
+
+    Manga page devices. Page: paper "black" (flashback), background {panel, opacity 0..1} (a giant face or
+    mood behind every panel). Slot: poly (slants, any shape), border "bold" | "thin" | "none" (borderless),
+    bleed true (runs off the page edge), subject "pop" (the character breaks out over the frame) or "cutout"
+    (no frame, the character floats). subject needs a cut-out first: cut_out_character. Slots draw in order,
+    so a later small box overlapping a big one is an inset panel. panel "" is an empty slot."""
     return _api("PUT", f"/api/stories/{story}/pages", json={"pages": pages})
+
+
+@server.tool()
+def refine_sketch(story: str, panel: str, preset: str = "inks", strength: float | None = None, count: int = 3, prompt: str = "", wait: bool = True) -> dict:
+    """Turn the artist's own drawing (the panel's version in use, often an import) into a cleaner stage while
+    keeping their poses and composition. preset: clean (line cleanup) | inks | tone (inks + screentone) | color.
+    strength: lower follows the drawing more closely (defaults 0.45 to 0.7 by preset). Results are new
+    versions; the user picks one. Look at them with view_image before saying they are ready."""
+    body: dict[str, Any] = {"preset": preset, "count": count, "prompt": prompt or None}
+    if strength is not None:
+        body["strength"] = strength
+    r = _api("POST", f"/api/stories/{story}/panels/{panel}/refine", json=body)
+    return {"results": _wait_jobs(r["jobs"], 1800), "source": r["source"]} if wait else r
+
+
+@server.tool()
+def cut_out_character(story: str, panel: str, point: list[float] | None = None, clear: bool = False) -> dict:
+    """Cut the character out of a panel's picked version, for page slots with subject "pop" or "cutout".
+    Apple Vision finds the figures; pass point [x, y] (fractions of the image) to pick one. clear=True removes it.
+    Redo it after picking a different version."""
+    body: dict[str, Any] = {"clear": clear}
+    if point is not None:
+        body["point"] = point
+    return _api("POST", f"/api/stories/{story}/panels/{panel}/subject", json=body)
 
 
 @server.tool()

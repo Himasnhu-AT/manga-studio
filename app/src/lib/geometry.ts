@@ -100,6 +100,9 @@ export interface BubbleGeom {
   bbox: [number, number, number, number];
 }
 
+/** Where a bubble without a position shows until Auto-letter (or a drag) places it. */
+export const UNPLACED_AT: Vec2 = [0.5, 0.12];
+
 export function bubbleGeom(b: Bubble, W: number, H: number): BubbleGeom {
   const scale = W / 864;
   const style = b.style ?? "speech";
@@ -107,8 +110,9 @@ export function bubbleGeom(b: Bubble, W: number, H: number): BubbleGeom {
   const maxW = Math.floor(W * (b.w ?? 0.42) * 0.72);
   const lh = Math.floor(px * 1.18);
   const lw = Math.max(2, Math.floor(3 * scale));
-  const cx = b.at[0] * W;
-  const cy = b.at[1] * H;
+  const at = b.at ?? UNPLACED_AT; // a line written in the Story editor, not placed yet
+  const cx = at[0] * W;
+  const cy = at[1] * H;
   const vertical = !!b.vertical;
 
   let tw: number, th: number;

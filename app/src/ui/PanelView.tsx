@@ -1,14 +1,16 @@
 // Shared panel renderer (Studio + Reader). Layer stack, bottom to top:
-//   background colour -> art raster (picked version) -> tone/FX (SVG) -> lettering (SVG).
+//   background colour -> art raster (picked version) -> tone/FX (SVG) -> border -> lettering (SVG).
+// Page devices (mirrors studio/export.py render_page): `subject: "pop"` draws the cut-out character again
+// over the border so it breaks out of the frame; `"cutout"` drops the frame: only the character floats.
 // The art frame keeps the raster's aspect; FX, lettering and editor overlays share its coordinates,
 // so bubbles stay glued to the art when a page slot crops it.
 
 import { memo, useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import type { Bubble, FxItem, Panel, Sfx, StoryDetail } from "../lib/api";
-import { versionUrl } from "../lib/api";
+import type { Bubble, FxItem, Page, Panel, Sfx, SlotSubject, StoryDetail } from "../lib/api";
+import { layerUrl, subjectUrl, versionUrl } from "../lib/api";
 import { bubbleGeom, INK, LETTER_FONT, PAPER, sfxGeom, useFontRev } from "../lib/geometry";
-import { artFrame, autoCrop, panelSize, polyClip } from "../lib/layout";
-import { cx } from "./kit";
+import { artFrame, autoCrop, pageDims, panelSize, polyClip } from "../lib/layout";
+import { cx, ErrorBoundary } from "./kit";
 import "./panel.css";
 
 export interface LayerToggles {
@@ -17,6 +19,8 @@ export interface LayerToggles {
   fx: boolean;
   lettering: boolean;
 }
+/** How far a popped-out character may leave its frame, as a fraction of the slot (export.POP_REACH). */
+export const POP_REACH = 0.2;
 export const ALL_LAYERS: LayerToggles = { background: true, art: true, fx: true, lettering: true };
 
 export interface PanelViewProps {
@@ -37,9 +41,29 @@ export interface PanelViewProps {
   empty?: ReactNode;
   className?: string;
   eager?: boolean;
+  /** Panel border in CSS px (page slots). 0 / undefined = none. */
+  borderPx?: number;
+  /** Page device: the cut-out character pops out of the frame, or floats with no frame. Needs `panel.subject`. */
+  subjectMode?: SlotSubject;
 }
 
-export const PanelView = memo(function PanelView({
+/** One panel that fails to render shows a small notice instead of taking the page (or the app) down. */
+export const PanelView = memo(function PanelView(props: PanelViewProps) {
+  return (
+    <ErrorBoundary
+      resetKey={JSON.stringify([props.panel.pick, props.panel.bubbles, props.panel.sfx, props.panel.drawing, props.bubbles])}
+      fallback={(e) => (
+        <div className={cx("flex items-center justify-center bg-[#fdeeee] p-2 text-center text-[11.5px] text-err", props.className)} style={{ aspectRatio: props.slotAspect ? undefined : "3 / 4" }} title={e.message}>
+          Couldn't draw {props.panel.id}: {e.message}
+        </div>
+      )}
+    >
+      <PanelViewInner {...props} />
+    </ErrorBoundary>
+  );
+});
+
+const PanelViewInner = memo(function PanelViewInner({
   slug,
   panel,
   story,
@@ -53,10 +77,17 @@ export const PanelView = memo(function PanelView({
   empty,
   className,
   eager,
+  borderPx,
+  subjectMode,
 }: PanelViewProps) {
   const { W, H } = panelSize(panel, story);
   const imgAspect = W / H;
-  const frame = slotAspect ? artFrame(imgAspect, slotAspect, autoCrop({ ...panel, bubbles: bubbles ?? panel.bubbles, sfx: sfx ?? panel.sfx }, imgAspect, slotAspect)) : { left: 0, top: 0, width: 100, height: 100 };
+  const contain = subjectMode === "cutout" && !!panel.subject;
+  const frame = slotAspect
+    ? contain
+      ? artFrame(imgAspect, slotAspect, panel.crop, "contain")
+      : artFrame(imgAspect, slotAspect, autoCrop({ ...panel, bubbles: bubbles ?? panel.bubbles, sfx: sfx ?? panel.sfx }, imgAspect, slotAspect))
+    : { left: 0, top: 0, width: 100, height: 100 };
   const pl = panel.layers ?? {};
   const show = {
     background: layers.background && pl.background?.visible !== false,
@@ -64,23 +95,101 @@ export const PanelView = memo(function PanelView({
     fx: layers.fx && pl.fx?.visible !== false,
     lettering: layers.lettering && pl.lettering?.visible !== false,
   };
+  const drawn = (panel.drawing ?? []).filter((l) => l.visible !== false && panel.drawing_files?.[l.id] !== undefined);
   const src = panel.pick ? versionUrl(slug, panel.id, panel.pick) : null;
+  // the artist's layers: over the art, under tone and lettering (compose.render_panel)
+  const drawing = show.art && drawn.length > 0 && (
+    <>
+      {drawn.map((l) => (
+        <img key={l.id} src={layerUrl(slug, panel.id, l.id, panel.drawing_files?.[l.id])} alt="" draggable={false} className="pointer-events-none absolute inset-0 size-full object-fill" style={{ opacity: l.opacity ?? 1 }} />
+      ))}
+    </>
+  );
+  const mask = subjectMode && src ? subjectUrl(slug, panel.subject) : null;
+  const frameStyle = { left: `${frame.left}%`, top: `${frame.top}%`, width: `${frame.width}%`, height: `${frame.height}%` };
+  const bg = show.background ? (pl.background?.color ?? "#ffffff") : "transparent";
+  const lettering = show.lettering && <Lettering bubbles={bubbles ?? panel.bubbles ?? []} sfx={sfx ?? panel.sfx ?? []} W={W} H={H} hideText={hideText} />;
 
+  if (!mask) {
+    return (
+      <div className={cx("relative overflow-hidden", className)} style={{ aspectRatio: slotAspect ? undefined : `${W} / ${H}`, clipPath: polyClip(poly), background: bg }}>
+        <div className="absolute" style={frameStyle}>
+          {show.art && src && <Art src={src} eager={eager} />}
+          {!src && !drawing && empty}
+          {drawing}
+          {show.fx && pl.fx?.items?.length ? <FxLayer items={pl.fx.items} W={W} H={H} /> : null}
+        </div>
+        <Border px={borderPx} poly={poly} />
+        <div className="absolute" style={frameStyle}>
+          {lettering}
+          {overlay}
+        </div>
+      </div>
+    );
+  }
+
+  // Cut-out character: the frame is clipped as usual (pop) or left out (cutout); the masked character is
+  // drawn unclipped on top, then lettering. The outer box doesn't clip, so the character can leave the slot.
+  const pop = subjectMode === "pop";
+  const masked = { WebkitMaskImage: `url("${mask}")`, maskImage: `url("${mask}")`, WebkitMaskSize: "100% 100%", maskSize: "100% 100%" } as React.CSSProperties;
   return (
-    <div
-      className={cx("relative overflow-hidden", className)}
-      style={{ aspectRatio: slotAspect ? undefined : `${W} / ${H}`, clipPath: polyClip(poly), background: show.background ? (pl.background?.color ?? "#ffffff") : "transparent" }}
-    >
-      <div className="absolute" style={{ left: `${frame.left}%`, top: `${frame.top}%`, width: `${frame.width}%`, height: `${frame.height}%` }}>
-        {show.art && src && <Art src={src} eager={eager} />}
-        {!src && empty}
-        {show.fx && pl.fx?.items?.length ? <FxLayer items={pl.fx.items} W={W} H={H} /> : null}
-        {show.lettering && <Lettering bubbles={bubbles ?? panel.bubbles ?? []} sfx={sfx ?? panel.sfx ?? []} W={W} H={H} hideText={hideText} />}
-        {overlay}
+    <div className={cx("relative", className)} style={{ aspectRatio: slotAspect ? undefined : `${W} / ${H}` }}>
+      {pop && (
+        <div className="absolute inset-0 overflow-hidden" style={{ clipPath: polyClip(poly), background: bg }}>
+          <div className="absolute" style={frameStyle}>
+            {show.art && <Art src={src!} eager={eager} />}
+            {drawing}
+            {show.fx && pl.fx?.items?.length ? <FxLayer items={pl.fx.items} W={W} H={H} /> : null}
+          </div>
+          <Border px={borderPx} poly={poly} />
+        </div>
+      )}
+      {show.art && (
+        // a pop-out reaches at most POP_REACH past the frame: a head or an arm, not the whole hidden picture
+        <div className="pointer-events-none absolute inset-0" style={pop ? { clipPath: `inset(-${POP_REACH * 100}%)` } : undefined}>
+          <div className="absolute" style={{ ...frameStyle, ...masked }}>
+            <img src={src!} alt="" draggable={false} className="absolute inset-0 size-full object-fill" />
+          </div>
+        </div>
+      )}
+      <div className={cx("absolute inset-0", pop && "overflow-hidden")} style={pop ? { clipPath: polyClip(poly) } : undefined}>
+        <div className="absolute" style={frameStyle}>
+          {lettering}
+          {overlay}
+        </div>
       </div>
     </div>
   );
 });
+
+const BG_LAYERS: LayerToggles = { background: true, art: true, fx: true, lettering: false };
+
+/**
+ * A page's full-bleed background art (`page.background`): drawn behind every panel at the page's own
+ * shape, faded by `opacity`. The classic giant face behind a row of small panels.
+ */
+export function PageBackground({ story, page, eager }: { story: StoryDetail; page: Page; eager?: boolean }) {
+  const bg = page.background;
+  const p = bg ? story.panels.find((x) => x.id === bg.panel) : undefined;
+  if (!bg || !p?.pick) return null;
+  const { page: pd } = pageDims(story.format);
+  return (
+    <div className="pointer-events-none absolute inset-0" style={{ opacity: bg.opacity ?? 0.35 }}>
+      <PanelView slug={story.slug} panel={{ ...p, crop: bg.crop ?? { x: 0.5, y: 0.5, scale: 1 }, bubbles: [], sfx: [] }} story={story} slotAspect={pd.width / pd.height} layers={BG_LAYERS} className="size-full" eager={eager} />
+    </div>
+  );
+}
+
+/** Panel frame line, drawn inside the slot (the slot clips the outer half, like the export's inward stroke). */
+function Border({ px, poly }: { px?: number; poly?: [number, number][] }) {
+  if (!px) return null;
+  const pts = (poly?.length ? poly : [[0, 0], [1, 0], [1, 1], [0, 1]]).map(([x, y]) => `${x * 100},${y * 100}`).join(" ");
+  return (
+    <svg className="pointer-events-none absolute inset-0 size-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+      <polygon points={pts} fill="none" stroke={INK} strokeWidth={px * 2} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
 
 /** Raster with a crossfade when the picked version changes (old stays until the new one decoded). */
 function Art({ src, eager }: { src: string; eager?: boolean }) {

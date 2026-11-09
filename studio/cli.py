@@ -19,6 +19,8 @@ URL = os.environ.get("STUDIO_URL", "http://127.0.0.1:7860")
 
 def _api(method: str, path: str, **kw):
     try:
+        if path != "/api/status" and (why := st.backend_mismatch(httpx.get(URL + "/api/status", timeout=30).json())):
+            sys.exit(f"wrong studio server at {URL}: {why}")
         r = httpx.request(method, URL + path, timeout=30, **kw)
     except httpx.ConnectError:
         sys.exit(f"studio server is not running at {URL}. Start it with: uv run studio serve")
@@ -188,7 +190,11 @@ def cmd_video(a):
     from studio import video
 
     s = st.load(a.story)
-    out = video.make_video(s, fade=a.fade, audio=Path(a.audio) if a.audio else None, out=Path(a.out) if a.out else None)
+    hit = None
+    if a.hit:
+        pid, _, at = a.hit.partition("@")
+        hit = (pid, float(at))
+    out = video.make_video(s, fade=a.fade, audio=Path(a.audio) if a.audio else None, out=Path(a.out) if a.out else None, audio_start=a.audio_start, hit=hit)
     print(out)
 
 
@@ -312,6 +318,8 @@ def main():
     p = sub.add_parser("video", help="mp4 of the composed panels (zoom + crossfades) -> final/<story>.mp4")
     p.add_argument("story")
     p.add_argument("--audio", help="audio file to lay under it (trimmed + faded to the video length)")
+    p.add_argument("--audio-start", type=float, default=0.0, help="seconds into the song to start from")
+    p.add_argument("--hit", help="PANEL@SECONDS: start the song so its moment at SECONDS lands on PANEL (e.g. p07@61.5)")
     p.add_argument("--fade", type=float, default=0.5)
     p.add_argument("--out")
     p.set_defaults(fn=cmd_video)

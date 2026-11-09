@@ -6,16 +6,21 @@
 //! backend it spawned. The UI talks to the backend over HTTP on 127.0.0.1:7860.
 //!
 //! Two layouts (see `Layout::detect`):
-//! - **Dev**: running from a checkout (debug build, MANGA_STUDIO_ROOT set, or a release binary that
-//!   isn't inside a .app while the checkout it was built from exists). `uv run studio serve` in the
-//!   repo; state in <repo>/.studio, stories in <repo>/stories. Unchanged from before.
+//! - **Dev**: running from a checkout (a debug build, or MANGA_STUDIO_ROOT set). `uv run studio serve`
+//!   in the repo; state in <repo>/.studio, stories in <repo>/stories. Release builds never look for
+//!   the checkout they were built from, so no path from the build machine ends up in them.
 //! - **Installed**: a downloaded .app. The backend ships as resources in Contents/Resources/backend
 //!   (code-signed: never written to). It runs as `uv run --frozen --project <that dir> studio serve`
 //!   with env that sends every write to the user's folders: venv, settings, log and bytecode under
 //!   ~/Library/Application Support/Manga Studio, stories in ~/Manga Studio/stories (seeded with the
 //!   sample story on first launch).
+//!
+//! A backend that is already running is reused only if it serves the same stories folder (it says
+//! which in /api/status). Otherwise the app shows that another studio holds the port instead of
+//! quietly reading and writing that studio's stories.
 
 use std::fs::{self, File};
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
@@ -35,23 +40,17 @@ fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_default())
 }
 
-/// The checkout this binary was built from (<repo>/app/src-tauri/../..).
-fn manifest_repo() -> PathBuf {
+/// The checkout a debug build was built from (<repo>/app/src-tauri/../..). Debug builds only: a
+/// release binary must not carry the build machine's paths.
+#[cfg(debug_assertions)]
+fn manifest_repo() -> Option<PathBuf> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR")); // <repo>/app/src-tauri
-    here.parent().and_then(Path::parent).map(Path::to_path_buf).unwrap_or_else(|| here.to_path_buf())
+    here.parent().and_then(Path::parent).map(Path::to_path_buf)
 }
 
-/// True when this binary is <Something>.app/Contents/MacOS/<binary>.
-fn in_app_bundle() -> bool {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.canonicalize().ok())
-        .and_then(|p| p.parent().map(Path::to_path_buf))
-        .map(|d| {
-            d.ends_with("Contents/MacOS")
-                && d.parent().and_then(Path::parent).is_some_and(|a| a.extension().is_some_and(|e| e == "app"))
-        })
-        .unwrap_or(false)
+#[cfg(not(debug_assertions))]
+fn manifest_repo() -> Option<PathBuf> {
+    None
 }
 
 /// Where the backend's code lives and where everything it writes goes.
@@ -76,13 +75,7 @@ fn env_path(k: &str) -> Option<PathBuf> {
 
 impl Layout {
     fn detect(app: &AppHandle) -> Layout {
-        let dev_root = if let Some(p) = env_path("MANGA_STUDIO_ROOT") {
-            Some(p)
-        } else if cfg!(debug_assertions) || (!in_app_bundle() && manifest_repo().join("pyproject.toml").is_file()) {
-            Some(manifest_repo())
-        } else {
-            None
-        };
+        let dev_root = env_path("MANGA_STUDIO_ROOT").or_else(manifest_repo);
         match dev_root {
             Some(root) => {
                 let data = root.join(".studio");
@@ -112,6 +105,11 @@ impl Layout {
                 }
             }
         }
+    }
+
+    /// The stories folder this app's backend uses (dev: the backend's default, <repo>/stories).
+    fn stories_dir(&self) -> PathBuf {
+        self.stories.clone().or_else(|| env_path("STUDIO_STORIES")).unwrap_or_else(|| self.root.join("stories"))
     }
 
     /// Env for the backend and the MCP launcher in installed mode, so nothing is written into the bundle.
@@ -211,6 +209,43 @@ fn backend_up() -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok()
 }
 
+/// The stories folder the backend on PORT reports in /api/status. Some("") when it answers without
+/// one (an older backend), None when it can't be asked.
+fn running_backend_stories() -> Option<String> {
+    let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
+    let mut s = TcpStream::connect_timeout(&addr, Duration::from_millis(250)).ok()?;
+    s.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+    s.set_write_timeout(Some(Duration::from_secs(2))).ok()?;
+    s.write_all(b"GET /api/status HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").ok()?;
+    let mut raw = Vec::new();
+    s.read_to_end(&mut raw).ok()?;
+    let text = String::from_utf8_lossy(&raw);
+    let body = text.split_once("\r\n\r\n")?.1;
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    Some(v.get("stories").and_then(|x| x.as_str()).unwrap_or_default().to_string())
+}
+
+fn same_dir(a: &Path, b: &Path) -> bool {
+    let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    canon(a) == canon(b)
+}
+
+/// When the backend on PORT isn't ours to share (it serves another stories folder), say why.
+fn foreign_backend(layout: &Layout) -> Option<String> {
+    let theirs = running_backend_stories()?;
+    let ours = layout.stories_dir();
+    if !theirs.is_empty() && same_dir(Path::new(&theirs), &ours) {
+        return None;
+    }
+    let where_ = if theirs.is_empty() { "an unknown folder (it's an older version)".to_string() } else { theirs };
+    Some(format!(
+        "Another Manga Studio backend is already running on port {PORT}, and it saves stories in {where_}. \
+         This app saves them in {}. Quit the other one (usually a `studio serve` started from a terminal or \
+         an agent), then click Try again.",
+        ours.display()
+    ))
+}
+
 /// GUI apps on macOS start with a minimal PATH, so look for uv where installers put it.
 fn find_uv() -> Option<PathBuf> {
     let home = home();
@@ -251,6 +286,8 @@ struct BackendStatus {
     uv_install: String,
     stories: Option<String>,
     data: String,
+    /// Set when the backend on the port belongs to another studio (different stories folder).
+    foreign: Option<String>,
 }
 
 fn spawn_backend(state: &Backend, layout: &Layout) {
@@ -322,6 +359,7 @@ fn backend_status(state: State<'_, Backend>, layout: State<'_, Layout>) -> Backe
         }
     }
     let up = backend_up();
+    let foreign = if up && child.is_none() { foreign_backend(&layout) } else { None };
     BackendStatus {
         url: format!("http://127.0.0.1:{PORT}"),
         up,
@@ -335,6 +373,7 @@ fn backend_status(state: State<'_, Backend>, layout: State<'_, Layout>) -> Backe
         uv_install: UV_INSTALL.into(),
         stories: layout.stories.as_ref().map(|p| p.display().to_string()),
         data: layout.data.display().to_string(),
+        foreign,
     }
 }
 
@@ -344,6 +383,9 @@ fn restart_backend(state: State<'_, Backend>, layout: State<'_, Layout>) -> Resu
     if let Some(c) = child {
         stop_child(c);
     } else if backend_up() {
+        if let Some(why) = foreign_backend(&layout) {
+            return Err(why);
+        }
         return Err("The backend was started outside the app; restart it where it runs.".into());
     }
     *state.error.lock().unwrap() = None;

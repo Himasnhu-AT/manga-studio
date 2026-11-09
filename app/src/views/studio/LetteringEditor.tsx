@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChatCircle, ChatCircleDots, ChatTeardrop, Megaphone, Minus, Plus, Rectangle, TextColumns, Trash } from "@phosphor-icons/react";
 import type { Bubble, BubbleStyle, Panel, Sfx, Vec2 } from "../../lib/api";
-import { bubbleGeom, clamp, LETTER_FONT, round3, sfxGeom, snapToProtect, useFontRev } from "../../lib/geometry";
+import { bubbleGeom, clamp, LETTER_FONT, round3, sfxGeom, snapToProtect, UNPLACED_AT, useFontRev } from "../../lib/geometry";
 import { IconButton, cx } from "../../ui/kit";
 import { useCanvasTick } from "./canvasCtx";
 import { useStudio } from "./studioState";
@@ -175,7 +175,7 @@ export function LetteringEditor({ panel, W, H, l }: { panel: Panel; W: number; H
           const b = bubbles[i];
           const bodyDrag = (e: React.PointerEvent) => {
             setSel({ kind: "bubble", i });
-            const at = b.at;
+            const at = b.at ?? UNPLACED_AT;
             const off: Vec2 = [0, 0];
             let first = true;
             drag(e, (p, start) => {
@@ -407,7 +407,10 @@ function BubbleControls({ b, set, editing }: { b: Bubble; set: (p: Partial<Bubbl
           label={b.tail ? "Remove tail" : "Add tail"}
           size="sm"
           active={!!b.tail}
-          onClick={() => set({ tail: b.tail ? null : [b.at[0], Math.min(1, b.at[1] + 0.14)] })}
+          onClick={() => {
+            const at = b.at ?? UNPLACED_AT;
+            set({ tail: b.tail ? null : [at[0], Math.min(1, at[1] + 0.14)] });
+          }}
         >
           <ChatTeardrop size={15} />
         </IconButton>

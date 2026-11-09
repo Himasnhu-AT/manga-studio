@@ -6,9 +6,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { BookOpen, BookOpenText, CaretLeft, CaretRight, Columns, PaintBrushBroad, Scroll, Square, WarningCircle } from "@phosphor-icons/react";
 import { Api, type Page, type StoryDetail } from "../lib/api";
 import { useLive } from "../lib/live";
-import { pageDims, polyClip, storyPages, stripPanels } from "../lib/layout";
+import { borderFrac, pageDims, polyClip, slotRect, storyPages, stripPanels } from "../lib/layout";
 import { useApp } from "../lib/store";
-import { PanelView } from "../ui/PanelView";
+import { PageBackground, PanelView } from "../ui/PanelView";
 import { Button, Empty, IconButton, Segmented, cx } from "../ui/kit";
 import "../ui/panel.css";
 
@@ -214,15 +214,27 @@ function ReaderPage({ story, page, width }: { story: StoryDetail; page: Page; wi
   const { page: pd, live } = pageDims(story.format);
   const byId = new Map(story.panels.map((p) => [p.id, p]));
   return (
-    <div className="relative bg-white shadow-[var(--shadow-page)]" style={{ width, aspectRatio: `${pd.width} / ${pd.height}` }}>
+    <div className="relative overflow-hidden shadow-[var(--shadow-page)]" style={{ width, aspectRatio: `${pd.width} / ${pd.height}`, background: page.paper === "black" ? "#0c0c0e" : "#ffffff" }}>
+      <PageBackground story={story} page={page} eager />
       <div className="absolute" style={{ left: `${(live.x / pd.width) * 100}%`, top: `${(live.y / pd.height) * 100}%`, width: `${(live.w / pd.width) * 100}%`, height: `${(live.h / pd.height) * 100}%` }}>
         {page.panels.map((s, i) => {
           const p = s.panel ? byId.get(s.panel) : undefined;
-          const [x, y, w, h] = s.box;
+          const [x, y, w, h] = slotRect(s, story.format);
+          const mode = s.subject && p?.subject ? s.subject : undefined;
           return (
             <div key={i} className="absolute" style={{ left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` }}>
               {p?.pick ? (
-                <PanelView slug={story.slug} panel={p} story={story} slotAspect={(w * live.w) / (h * live.h)} poly={s.poly} className="size-full" eager />
+                <PanelView
+                  slug={story.slug}
+                  panel={p}
+                  story={story}
+                  slotAspect={(w * live.w) / (h * live.h)}
+                  poly={s.poly}
+                  borderPx={mode === "cutout" ? 0 : borderFrac(s.border) * width}
+                  subjectMode={mode}
+                  className="size-full"
+                  eager
+                />
               ) : (
                 <div className="size-full bg-[#f3f3f1]" style={{ clipPath: polyClip(s.poly) }} />
               )}

@@ -303,13 +303,21 @@ def render_panel(story: Story, pid: str, lettering: bool = True, crop: bool = Tr
 
     `crop=False` leaves framing to the caller: page export frames the whole panel (art + lettering)
     inside its slot exactly like the app's canvas does (export.art_frame / auto_crop)."""
+    from studio import drawing
+
     panel = story.panel(pid)
     v = picked_version(story, pid)
-    if not v:
+    drawn = drawing.layers(story.dir, panel)
+    if v:
+        art = Image.open(story.dir / "out" / pid / v).convert("RGBA")
+    elif drawn:  # drawn in the Studio from a blank page: white paper at the drawing's size
+        art = Image.new("RGBA", drawing.size(story.dir, panel), (255, 255, 255, 255))
+    else:
         return None
-    art = Image.open(story.dir / "out" / pid / v).convert("RGBA")
     layers = panel.get("layers") or {}
     use_crop = panel.get("crop") if crop else None
+    if drawn:
+        art = drawing.composite(story.dir, panel, art)  # the artist's layers sit on the art, under tone and lettering
     if layers or use_crop:
         bgc = (layers.get("background") or {})
         bg = _hex(bgc["color"]) if bgc.get("visible", True) and bgc.get("color") else (255, 255, 255, 255)

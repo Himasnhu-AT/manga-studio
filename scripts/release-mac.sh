@@ -203,6 +203,8 @@ if [[ $SKIP_BUILD -eq 0 ]]; then
   BUILD=(env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH
     -u APPLE_CERTIFICATE -u APPLE_CERTIFICATE_PASSWORD
     APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY"
+    # Source paths baked into panic messages would carry the builder's home folder; write them as ~.
+    RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$HOME=~"
     pnpm tauri build --target "$TARGET" --bundles app)
   if [[ $CI_MODE -eq 1 ]]; then
     (cd app && "${BUILD[@]}")

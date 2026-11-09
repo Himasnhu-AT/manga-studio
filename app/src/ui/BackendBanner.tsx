@@ -22,6 +22,8 @@ export interface BackendStatus {
   uv_install: string;
   stories: string | null;
   data: string;
+  /** Set when the backend on the port belongs to another studio (it saves stories elsewhere). */
+  foreign: string | null;
 }
 
 export async function tauri<T>(cmd: string): Promise<T> {
@@ -29,31 +31,54 @@ export async function tauri<T>(cmd: string): Promise<T> {
   return invoke<T>(cmd);
 }
 
-/** Poll the shell's backend status every second while `active` (desktop app only; null in a browser). */
-export function useBackendStatus(active = true) {
+/** Poll the shell's backend status every `ms` while `active` (desktop app only; null in a browser). */
+export function useBackendStatus(active = true, ms = 1000) {
   const [status, setStatus] = useState<BackendStatus | null>(null);
   useEffect(() => {
     if (!active || !inTauri) return;
     const poll = () => void tauri<BackendStatus>("backend_status").then(setStatus).catch(() => {});
     poll();
-    const t = window.setInterval(poll, 1000);
+    const t = window.setInterval(poll, ms);
     return () => window.clearInterval(t);
-  }, [active]);
+  }, [active, ms]);
   return status;
 }
 
-/** Shown only while the backend is unreachable. In the desktop app the shell starts it for us. */
+/** Shown while the backend is unreachable, or (desktop app) when the backend on the port belongs to
+ *  another studio. In the desktop app the shell starts the backend for us. */
 export function BackendBanner() {
   const connected = useConnected();
-  const status = useBackendStatus(!connected);
+  // Connected: still check now and then that the backend is ours (it saves to our stories folder).
+  const status = useBackendStatus(true, connected ? 3000 : 1000);
   const [since] = useState(() => Date.now());
   const [, tick] = useState(0);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   useEffect(() => {
     if (connected) return;
     const t = window.setInterval(() => tick((n) => n + 1), 1000);
     return () => window.clearInterval(t);
   }, [connected]);
+
+  if (status?.foreign) {
+    // Block the app: working here would read and write another studio's stories.
+    const retry = () => {
+      setRetryError(null);
+      void tauri("restart_backend").catch((e) => setRetryError(String(e)));
+    };
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-paper/95 p-8">
+        <div className="max-w-[520px] space-y-3 text-center text-[13px] text-ink-2">
+          <div className="text-[15px] font-medium text-ink">Another Manga Studio is using the engine port</div>
+          <p className="selectable">{status.foreign}</p>
+          {retryError && retryError !== status.foreign && <p className="selectable text-err">{retryError}</p>}
+          <Button size="sm" variant="ghost" icon={<ArrowClockwise size={13} />} onClick={retry}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (connected) return null;
 
